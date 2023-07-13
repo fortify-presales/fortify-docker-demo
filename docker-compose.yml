@@ -1,0 +1,77 @@
+version: '3.8'
+services:
+
+  sscdemo:
+    image: fortifydocker/sscdemo:${FORTIFY_VERSION}
+    restart: always
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - ftfydata:/fortify
+      - type: bind
+        source: ./fortify.license
+        target: /fortify/fortify.license
+    environment:
+       - SSC_MAX_MEM_MB=4096 
+    mem_limit: 6g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ftfydemo
+  
+  scancentral-sast-controller:
+    image: fortifydocker/scancentral-sast-controller:${FORTIFY_VERSION}
+    restart: always
+    depends_on:
+      sscdemo:
+        condition: service_healthy
+    ports: 
+      - "8085:8080"
+      - "8445:8443"
+    volumes:
+      - ftfydata:/fortify
+    environment:
+      - SCANCENTRAL_CONFIG_WORKER_AUTH_TOKEN=FortifyDemo
+      - SCANCENTRAL_CONFIG_CLIENT_AUTH_TOKEN=FortifyDemo
+      - SCANCENTRAL_CONFIG_SSC_SCANCENTRAL_CTRL_SECRET=FortifyDemo
+      - SCANCENTRAL_CONFIG_SSC_URL=http://sscdemo:8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/scancentral-ctrl"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s      
+    networks:
+      - ftfydemo
+  
+  scancentral-sast-sensor:
+    image: fortifydocker/scancentral-sast-sensor:${FORTIFY_VERSION}
+    restart: always
+    depends_on:
+      sscdemo:
+        condition: service_healthy
+      scancentral-sast-controller:
+        condition: service_healthy
+    volumes:
+      - ftfydata:/fortify
+      - type: bind
+        source: ./fortify.license
+        target: /app/sca/fortify.license
+    environment:
+      - SCANCENTRAL_ENABLE=1
+      - SCANCENTRAL_URL=http://scancentral-sast-controller:8080/scancentral-ctrl
+      - SCANCENTRAL_WORKER_AUTH_TOKEN=FortifyDemo
+      - FORTIFY_UPDATE_URL=http://sscdemo:8080
+      - FORTIFY_UPDATE_AUTO=1
+      - FORTIFY_UPDATE_ACCEPT_KEY=1
+    networks:
+      - ftfydemo
+networks:
+  ftfydemo:
+volumes:
+  ftfydata:
