@@ -33,7 +33,7 @@ Follow standard procedures to install and configure LIM on a Windows machine or 
 Create a `.env` file with settings that you wish to you, an example file is given below:
 
 ```aidl
-# Default version of SSC, ScanCentral SAST to use
+# Default version of SSC, ScanCentral SAST etc to use
 FORTIFY_VERSION=23.1
 # LIM configuration
 LIM_API_URL=http://_YOUR_LIM_SERVER_/LIM.API
@@ -57,7 +57,7 @@ It will take a while for everything to complete.
 Once the details of the environment are complete at the end you will need to login to Fortify
 SSC and enter the details of ScanCentral SAST/DAST as per the instructions.
 
-If you want to populate the Fortify environment with sample data, you can the following command:
+If you want to populate the Fortify environment with some additional sample data, you can the following command:
 
 ```aidl
 .\populate.sh
