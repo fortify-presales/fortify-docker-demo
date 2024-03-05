@@ -1,2 +1,4 @@
-.env
 fortify.license
+sonatype-license*
+
+scdast

@@ -1,0 +1,41 @@
+<!--
+
+    Copyright (c) 2020-present Sonatype, Inc. All rights reserved.
+    Includes the third-party code listed at http://links.sonatype.com/products/clm/attributions.
+    "Sonatype" is a trademark of Sonatype, Inc.
+
+-->
+<!--
+Custom group mapping for SSC, to map "Vulnerable OSS" to OWASP Top 10 2013 & 2017's "A9 Using Components with Known Vulnerabilities"
+It needs to be uploaded to SSC: in the Administration > Metrics & Tracking > Rulepacks,
+click the “Import” button and select the file.
+-->
+<ExternalMetadataPack xmlns="xmlns://www.fortifysoftware.com/schema/externalMetadata" schemaVersion="1.0">
+	<PackInfo>
+		<Name>Vulnerable OSS to OWASP Top 10 2013/2017/2021 Mapping</Name>
+		<PackID>vulnerableoss-owasp2013-2017-2021</PackID>
+		<Version>2021.01.20.0001</Version>
+		<Description>Custom mapping of Sonatype findings - Vulnerable OSS to OWASP Top 10 2013/2017/2021</Description>
+	</PackInfo>
+	<ExternalListExtension><!-- OWASP Top 10 2013 -->
+		<ExternalListID>1A2B4C7E-93B0-4502-878A-9BE40D2A25C4</ExternalListID>
+		<Mapping>
+			<InternalCategory>Vulnerable OSS</InternalCategory>
+			<ExternalCategory>A9 Using Components with Known Vulnerabilities</ExternalCategory>
+		</Mapping>
+	</ExternalListExtension>
+	<ExternalListExtension><!-- OWASP Top 10 2017 -->
+		<ExternalListID>3C6ECB67-BBD9-4259-A8DB-B49328927248</ExternalListID>
+		<Mapping>
+			<InternalCategory>Vulnerable OSS</InternalCategory>
+			<ExternalCategory>A9 Using Components with Known Vulnerabilities</ExternalCategory>
+		</Mapping>
+	</ExternalListExtension>
+	<ExternalListExtension><!-- OWASP Top 10 2021 -->
+		<ExternalListID>1887A283-3C0D-453C-AD10-0B451EAF096D0</ExternalListID>
+		<Mapping>
+			<InternalCategory>Vulnerable OSS</InternalCategory>
+			<ExternalCategory>A06 Vulnerable and Outdated Components</ExternalCategory>
+		</Mapping>
+	</ExternalListExtension>
+</ExternalMetadataPack>

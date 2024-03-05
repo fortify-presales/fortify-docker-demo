@@ -1,14 +1,28 @@
 version: '3.8'
 services:
-     
+
+  # Postgres database for ScanCentral DAST - uncomment if required
+  #postgres:
+  #  image: "postgres:${POSTGRES_VERSION}"
+  #  container_name: "postgres"
+  #  ports:
+  #    - "5432:5432"
+  #  restart: always
+  #  shm_size: 128mb
+  #  environment:
+  #    - "POSTGRES_PASSWORD=F)rt1fy!"
+  #  networks:
+  #    - ftfydemo_net
+
   ssc:
-    image: fortifydocker/sscdemo:${FORTIFY_VERSION}
-    restart: always
+    image: fortifydocker/sscdemo:${SSCDEMO_VERSION}
+    container_name: "ssc"
     ports:
-      - "8080:8080"
-      - "8443:8443"
+      - "${SSC_PORT_EXTERNAL}:8080"
+#      - "8443:8443"
+    restart: always
     volumes:
-      - ftfydata:/fortify
+      - ftfydata_ssc:/fortify
       - type: bind
         source: ./fortify.license
         target: /fortify/fortify.license
@@ -16,41 +30,45 @@ services:
        - SSC_MAX_MEM_MB=4096 
     mem_limit: 6g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD", "curl", "-f", "http://localhost:${SSC_PORT_INTERNAL}"]
       interval: 120s
       timeout: 10s
       retries: 10
       start_period: 90s
     networks:
-      - ftfydemo
+      - ftfydemo_net
 
   scancentral-sast-controller:
-    image: fortifydocker/scancentral-sast-controller:${FORTIFY_VERSION}
+    image: fortifydocker/scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_VERSION}
+    container_name: "scancentral-sast-controller"
     restart: always
     depends_on:
       ssc:
         condition: service_healthy
     ports: 
-      - "8085:8080"
-      - "8445:8443"
+      - "${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}:8080"
+#      - "8445:8443"
     volumes:
-      - ftfydata:/fortify
+      - ftfydata_scsast_ctrl:/fortify
     environment:
       - SCANCENTRAL_CONFIG_WORKER_AUTH_TOKEN=FortifyDemo
       - SCANCENTRAL_CONFIG_CLIENT_AUTH_TOKEN=FortifyDemo
       - SCANCENTRAL_CONFIG_SSC_SCANCENTRAL_CTRL_SECRET=FortifyDemo
-      - SCANCENTRAL_CONFIG_SSC_URL=http://ssc:8080
+      - SCANCENTRAL_CONFIG_SSC_URL=http://ssc:${SSC_PORT_INTERNAL}
+      - SCANCENTRAL_CONFIG_THIS_URL=http://scancentral-sast-controller.ftfydemo.local:${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}/scancentral-ctrl
+      - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.17.0.0/16,172.23.0.0/16,10.0.0.0/8
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/scancentral-ctrl"]
+      test: ["CMD", "curl", "-f", "http://localhost:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl"]
       interval: 90s
       timeout: 10s
       retries: 3
       start_period: 40s      
     networks:
-      - ftfydemo
+      - ftfydemo_net
   
   scancentral-sast-sensor:
-    image: fortifydocker/scancentral-sast-sensor:${FORTIFY_VERSION}
+    image: fortifydocker/scancentral-sast-sensor:${SCANCENTRAL_SAST_SENSOR_VERSION}
+    container_name: "scancentral-sast-sensor"
     restart: always
     depends_on:
       ssc:
@@ -58,44 +76,90 @@ services:
       scancentral-sast-controller:
         condition: service_healthy
     volumes:
-      - ftfydata:/fortify
+      - ftfydata_scsast_sensor:/fortify
       - type: bind
         source: ./fortify.license
         target: /app/sca/fortify.license
     environment:
       - SCANCENTRAL_ENABLE=1
-      - SCANCENTRAL_URL=http://scancentral-sast-controller:8080/scancentral-ctrl
+      - SCANCENTRAL_URL=http://scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl
       - SCANCENTRAL_WORKER_AUTH_TOKEN=FortifyDemo
-      - FORTIFY_UPDATE_URL=http://ssc:8080
+      - FORTIFY_UPDATE_URL=http://ssc:${SSC_PORT_INTERNAL}
       - FORTIFY_UPDATE_AUTO=1
       - FORTIFY_UPDATE_ACCEPT_KEY=1
     networks:
-      - ftfydemo
+      - ftfydemo_net
 
-  nginx:
-    image: nginx:1.25-alpine
-    hostname: ftfydemo.local
+  nexus-repo:
+    image: sonatype/nexus3:${NEXUS_REPO_VERSION}
+    container_name: "nexus-repo"
     restart: always
     depends_on:
       ssc:
         condition: service_healthy
-      scancentral-sast-controller:
-        condition: service_healthy    
-    ports:
-      - "80:80"
-      - "443:443"
+    ports: 
+      - "${NEXUS_REPO_PORT}:8081"
     volumes:
-      - ./data/nginx:/etc/nginx/conf.d
-#      - ./data/certbot/conf:/etc/letsencrypt
-#      - ./data/certbot/www:/var/www/certbot
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
-#    environment:
-#      - NGINX_HOST=ftfydemo.local
-#      - NGINX_PORT=80
+      - ftfydata_nexus_repo:/nexus-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_REPO_PORT}"]
+      interval: 90s
+      timeout: 10s
+      retries: 3
+      start_period: 40s      
     networks:
-      - ftfydemo  
+      - ftfydemo_net
+
+  nexus-iq-server:
+    image: sonatype/nexus-iq-server:${NEXUS_IQ_SERVER_VERSION}
+    container_name: "nexus-iq-server"
+    restart: always
+    depends_on:
+      ssc:
+        condition: service_healthy
+    ports: 
+      - "${NEXUS_IQ_SERVER_WEB_PORT}:8070"
+      - "${NEXUS_IQ_SERVER_ADMIN_PORT}:8071"
+    volumes:
+      - ftfydata_sonatype-work:/sonatype-work
+      - ftfydata_sonatype-logs:/var/log/nexus-iq-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_IQ_SERVER_WEB_PORT}"]
+      interval: 90s
+      timeout: 10s
+      retries: 3
+      start_period: 40s      
+    networks:
+      - ftfydemo_net
+
+  jenkins:
+    image: jenkins/jenkins:${JENKINS_VERSION}
+    container_name: "jenkins"
+    ports:
+      - "${JENKINS_WEB_PORT_EXTERNAL}:8080"
+      - "${JENKINS_AGENT_PORT}:50000"
+    restart: always
+    volumes:
+      - ftfydata_jenkins:/var/jenkins_home
+    environment:
+      - JAVA_OPTS="-Dhudson.footerURL=https://www.microfocus.com/en-us/cyberres/application-security"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${JENKINS_WEB_PORT_INTERNAL}"]
+      interval: 120s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - ftfydemo_net
 
 networks:
-  ftfydemo:
+  ftfydemo_net:
+    external: true
 volumes:
-  ftfydata:
+  ftfydata_ssc:
+  ftfydata_scsast_ctrl:
+  ftfydata_scsast_sensor:
+  ftfydata_nexus_repo:
+  ftfydata_sonatype-work:
+  ftfydata_sonatype-logs:
+  ftfydata_jenkins:

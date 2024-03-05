@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+
+  lim:
+    image: "fortifydocker/lim:23.2.ubi.8"
+    container_name: "lim"
+    ports:
+      - "88:80"
+    volumes:
+      - ftfydata_lim:/app
+    restart: always
+    environment:
+      - "ASPNETCORE_URLS=http://+:80"
+      - "JWT__ValidAudience=FortifyLimAuthAudience"
+      - "JWT__ValidIssuer=FortifyLimAuthIssuer"
+      - "JWT__SecurityKey=aS1l6IUxmbf9X6PCVpmkG8vraqlpPFU9"
+      - "DefaultAdministrator__Login=limadm"
+      - "DefaultAdministrator__FullName=LIM Administrator"
+      - "DefaultAdministrator__Password=F)rt1fy!"
+      - "DefaultAdministrator__Email=limadm@scancentral.onfortify.com"
+      - "Proxy__Mode=0"
+    networks:
+      - ftfydemo_net
+
+networks:
+  ftfydemo_net:
+    external: true
+volumes:
+  ftfydata_lim:
