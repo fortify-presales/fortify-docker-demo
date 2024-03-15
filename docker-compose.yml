@@ -2,17 +2,17 @@ version: '3.8'
 services:
 
   # Postgres database for ScanCentral DAST - uncomment if required
-  #postgres:
-  #  image: "postgres:${POSTGRES_VERSION}"
-  #  container_name: "postgres"
-  #  ports:
-  #    - "5432:5432"
-  #  restart: always
-  #  shm_size: 128mb
-  #  environment:
-  #    - "POSTGRES_PASSWORD=F)rt1fy!"
-  #  networks:
-  #    - ftfydemo_net
+  postgres:
+    image: "postgres:${POSTGRES_VERSION}"
+    container_name: "postgres"
+    ports:
+      - "5432:5432"
+    restart: always
+    shm_size: 128mb
+    environment:
+      - "POSTGRES_PASSWORD=F)rt1fy!"
+    networks:
+      - ftfydemo_net
 
   ssc:
     image: fortifydocker/sscdemo:${SSCDEMO_VERSION}
@@ -56,7 +56,7 @@ services:
       - SCANCENTRAL_CONFIG_SSC_SCANCENTRAL_CTRL_SECRET=FortifyDemo
       - SCANCENTRAL_CONFIG_SSC_URL=http://ssc:${SSC_PORT_INTERNAL}
       - SCANCENTRAL_CONFIG_THIS_URL=http://scancentral-sast-controller.ftfydemo.local:${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}/scancentral-ctrl
-      - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.17.0.0/16,172.23.0.0/16,10.0.0.0/8
+      - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.0.0.0/8,10.0.0.0/8
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl"]
       interval: 90s
