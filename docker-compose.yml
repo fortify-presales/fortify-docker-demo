@@ -132,6 +132,29 @@ services:
     networks:
       - ftfydemo_net
 
+  nexus-iq-integration-service:
+    image: nexus-iq-integration-service:latest
+    build: ./nexus-iq-integration-service
+    container_name: "nexus-iq-integration-service"
+    restart: always
+    depends_on:
+      ssc:
+        condition: service_healthy
+      nexus-iq-server:
+        condition: service_healthy  
+    ports: 
+      - "${NEXUS_IQ_SERVER_INTEGRATION_PORT}:8182"
+    volumes:
+      - ftfydata_sonatype-integration:/var/nexus-iq-integration-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_IQ_SERVER_INTEGRATION_PORT}"]
+      interval: 90s
+      timeout: 10s
+      retries: 3
+      start_period: 40s      
+    networks:
+      - ftfydemo_net
+
   jenkins:
     image: jenkins/jenkins:${JENKINS_VERSION}
     container_name: "jenkins"
@@ -162,4 +185,5 @@ volumes:
   ftfydata_nexus_repo:
   ftfydata_sonatype-work:
   ftfydata_sonatype-logs:
+  ftfydata_sonatype-integration:
   ftfydata_jenkins:
