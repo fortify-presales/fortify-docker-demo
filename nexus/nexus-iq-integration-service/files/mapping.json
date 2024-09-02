@@ -1,0 +1,16 @@
+[
+    {
+      "sonatypeProject": "IWA",
+      "sonatypeProjectStage": "build",
+      "fortifyApplication": "IWA",
+      "fortifyApplicationVersion": "main",
+      "overwrite": true
+    },
+    {
+      "sonatypeProject": "fortifydemoapp",
+      "sonatypeProjectStage": "build",
+      "fortifyApplication": "FortifyDemoApp",
+      "fortifyApplicationVersion": "main",
+      "overwrite": true
+    }
+]

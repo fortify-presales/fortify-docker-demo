@@ -1,0 +1,126 @@
+name: ssc-demo
+
+services:
+
+  init:
+    container_name: "${COMPOSE_PROJECT_NAME}-init"
+    image: ${SSC_REPOSITORY_PREFIX-docker.io/fortifydocker/}${SSC_IMAGE-ssc-demo-webapp}:24.2.0.0186.0086
+    environment: &env
+      HTTP_SERVER_CERTIFICATE_PASSWORD: 'passw0rd1'
+      HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE: "/fortify/secrets/keystore"
+      HTTP_SERVER_CERTIFICATE_KEY_PASSWORD_FILE: "/fortify/secrets/key-password"
+      HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE: "/fortify/secrets/keystore-password"
+      COM_FORTIFY_SSC_AUTOCONFIGPATH: "/fortify/secrets/ssc.autoconfig"
+      COM_FORTIFY_SSC_LICENSEPATH: &license-path '/app/fortify.license'
+      MYSQL_DATABASE: 'sscdemodb'
+      MYSQL_USER: 'sscdemodbuser'
+      MYSQL_PASSWORD: 'sscdemodbpassw0rd'
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e -o pipefail
+
+        # Verify license file
+        if ! [ -f "$${COM_FORTIFY_SSC_LICENSEPATH}" ]; then
+          echo "SSC license file does not exist. Please check your setting in .env file"
+          exit 1
+        fi
+        if ! [ -r "$${COM_FORTIFY_SSC_LICENSEPATH}" ]; then
+          echo "SSC license file is not readable. Please check your setting in .env file"
+          exit 1
+        fi
+
+        if [ ! -e "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE}" ]; then
+          # Generate self-signed certificate for Tomcat HTTPS
+          mkdir -p /fortify/secrets
+          printf '%s\n' "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" > "$${HTTP_SERVER_CERTIFICATE_KEY_PASSWORD_FILE}"
+          printf '%s\n' "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" > "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE}"
+          keytool -genkey -alias ssc-demo-webapp -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -validity 365 \
+                  -keypass "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" -storepass "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" \
+                  -dname "CN=localhost, O=Fortify" -keystore "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE}"
+        fi
+
+        # Generate autoconfig file
+        cat <<EOF > "$${COM_FORTIFY_SSC_AUTOCONFIGPATH}"
+        datasourceProperties:
+          jdbc.url: 'jdbc:mysql://mysql:3306/$${MYSQL_DATABASE}?sessionVariables=collation_connection=utf8_bin&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true'
+          db.username: '$${MYSQL_USER}'
+          db.password: '$${MYSQL_PASSWORD}'
+        dbMigrationProperties:
+          migration.enabled: true
+        EOF
+
+        # Make created directory and files executable by the webapp service runtime user
+        chmod -R 'u=rwX,g=rX,o=' /fortify/secrets
+    configs:
+      - source: license
+        target: *license-path
+    volumes: &fortify-volume
+      - fortify:/fortify
+    networks:
+      - ftfydemo_net
+
+  mysql:
+    container_name: "${COMPOSE_PROJECT_NAME}-mysql"
+    image: ${MYSQL_REPOSITORY_PREFIX-docker.io/library/}mysql:8.0.36-debian
+    mem_limit: 2G
+    environment:
+      <<: *env
+      MYSQL_ROOT_PASSWORD: 'rootpassw0rd'
+    cap_add:
+      - SYS_NICE  # Add CAP_SYS_NICE privilege, because mysql docker container uses mbind
+    expose:
+      - 3306/tcp
+    command: --collation-server=utf8_bin --character-set-server=utf8 --max-allowed-packet=1G --innodb-log-file-size=512M --innodb-lock-wait-timeout=300 --default-storage-engine=INNODB --sql-mode=TRADITIONAL --innodb-buffer-pool-size=512M --max-connections=50 --skip-host-cache --skip-name-resolve --skip-log-bin
+    healthcheck:
+      test: "mysqladmin -hlocalhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent ping"
+      timeout: 3s
+      interval: 6s
+      start_period: 12s
+    volumes:
+      - mysql:/var/lib/mysql
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    networks:
+      - ftfydemo_net
+
+  webapp:
+    container_name: "${COMPOSE_PROJECT_NAME}-webapp"
+    image: ${SSC_REPOSITORY_PREFIX-docker.io/fortifydocker/}${SSC_IMAGE-ssc-demo-webapp}:24.2.0.0186.0086
+    mem_limit: 4G
+    environment:
+      <<: *env
+      HTTP_SERVER_SSC_PATH_PREFIX: '${SSC_URL_PREFIX-/}'
+      SSC_AUTOCONFIG_HOST_URL: 'https://${SSC_HOSTNAME-localhost}:${SSC_HTTPS_PORT-443}${SSC_URL_PREFIX-/}'
+      COM_FORTIFY_SSC_ENFORCESECURETRANSPORT: 'false'
+    ports:
+      - "${SSC_HTTPS_PORT-443}:8443/tcp"
+      - "${SSC_HTTP_PORT-0}:8080/tcp"
+    volumes: *fortify-volume
+    configs:
+      - source: license
+        target: *license-path
+        uid: "0"
+        gid: "0"
+        mode: 0440
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+    networks:
+      - ftfydemo_net
+
+networks:
+  ftfydemo_net:
+    external: true
+
+volumes:
+  fortify:
+  mysql:
+
+configs:
+  license:
+    file: ${SSC_LICENSEPATH-fortify.license}

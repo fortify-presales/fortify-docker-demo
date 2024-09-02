@@ -8,6 +8,8 @@ It also includes Sonatype Nexus Repository, IQ Server and Jenkins for integratio
 
 ### Docker
 
+Install the latest version of docker for your target o/s, e.g. ubuntu.
+
 ### fortify.license file
 
 A working **fortify.license** file for SSC and ScanCentral SAST.
@@ -25,17 +27,31 @@ You will need Docker Hub credentials to access the private docker images in the 
 
 Edit the `.env` file if you wish to use any different versions of the products and/or different ports
 
-## Install environment
-
-Run the following command to startup a new environment.
+## Create Docker Network
 
 If it does not already exist, create the docker network to be used with the following command:
 
 ```aidl
-docker network create ftfydemo_net
+sudo docker network create ftfydemo_net
 ```
 
-Then start the containers using the following:
+## Start  LIM
+
+The License Infrastructure Manager (LIM) should be started separately to the rest of the containers.
+To do this execute the following commands:
+
+```aidl
+cd lim
+docker compose --env-file ../.env up -d
+```
+
+## Install License
+
+Navigate to LIM URL and install the license(s) that you require.
+
+## Start Containers
+
+Start the containers using the following:
 
 ```aidl
 docker compose up -d
@@ -47,9 +63,9 @@ When the `ssc` container has started run the following script to reset the admin
 ./reset-ssc-admin-user.sh
 ```
 
-## Remove environment
+## Remove Containers
 
-If you wish to remove the environment you can use the following command:
+If you wish to remove the containers you can use the following command:
 
 ```aidl
 docker compose down

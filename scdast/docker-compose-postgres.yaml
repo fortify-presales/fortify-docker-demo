@@ -1,0 +1,18 @@
+services:
+
+  # Postgres database for ScanCentral DAST
+  postgres:
+    image: "postgres:${POSTGRES_VERSION}"
+    container_name: "postgres"
+    ports:
+      - "5432:5432"
+    restart: always
+    shm_size: 128mb
+    environment:
+      - "POSTGRES_PASSWORD=F)rt1fy!"
+    networks:
+      - ftfydemo_net
+
+networks:
+  ftfydemo_net:
+    external: true

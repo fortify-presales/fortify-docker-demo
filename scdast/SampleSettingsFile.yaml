@@ -1,0 +1,113 @@
+﻿# Refer to the Fortify ScanCentral DAST Configuration and Usage Guide for more details.
+# Environment variable placeholders may be used in the format ${ENVIRONMENT VARIABLE NAME}. Any environment variable placeholder will be replaced during runtime.
+
+databaseSettings:
+  # databaseProvider indicates the type of database that will be used.
+  # Allowed values: SQLServer, PostgreSQL, AzureSQLServer, AzurePostgreSQL, AmazonRdsSQLServer, AmazonRdsPostgreSQL
+  databaseProvider: PostgreSQL
+  server: postgres
+  database: dast
+  # dboLevelDatabaseAccount is not required if the database already exists and migration scripts have already been applied.
+  # A migration script can be created using the 'generateMigrationScript' command.
+  dboLevelDatabaseAccount:
+    username: postgres
+    # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+    password: ${POSTGRES_DBO_PASSWORD}
+    # Allowed values: true, false
+    #useWindowsAuthentication: false
+    #additionalConnectionProperties: "trustServerCertificate=true;Trusted_Connection=False" 
+  standardDatabaseAccount:
+    username: dast
+    # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+    password: ${POSTGRES_DAST_PASSWORD}
+    # Allowed values: true, false
+    createLogin: true
+    #additionalConnectionProperties: "trustServerCertificate=true;Trusted_Connection=False"
+# Allowed values: true, false
+retainCompletedScans: true
+# Allowed values: true, false
+disableAdvancedScanPrioritization: false
+# Allowed values: true, false
+enableRestrictedScanSettings: false
+# An encrypted serviceToken is recommended. The password can be encrypted using the 'encrypt' command.
+serviceToken: FortifyDemo
+smartUpdateSettings:
+  smartUpdateUrl: https://smartupdate.fortify.microfocus.com/
+  licensingUrl: https://licenseservice.fortify.microfocus.com/
+sSCSettings:
+  sSCRootUrl: http://ssc-demo-webapp:8080
+  serviceAccountUserName: admin
+  serviceAccountPassword: "admin" # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+dASTApiSettings:
+  rootUrl: http://scancentral-dast-api:80
+  disableCorsOrigins: true # Allowed values: true, false
+  # One ore more corsOrigins entries is required if disableCorsOrigins = false
+  # Each entry should be on a separate line and start with a dash (-) followed by a space
+  corsOrigins:
+  - http://ssc-demo-webapp:8080
+  - https://ssc-demo-webapp:8443
+  - http://scancentral-dast-api:80
+  - https://scancentral-dast-api:443
+  - http://ssc.onfortify.com
+  - https://ssc.onfortify.com
+  - http://ssc.onfortify.com:8080
+lIMSettings:
+  limUrl: http://lim
+  serviceAccountUserName: limadm
+  serviceAccountPassword: ${LIM_SERVICE_PASSWORD} # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+  defaultLimPoolName: Default
+  defaultLimPoolPassword: ${LIM_POOL_PASSWORD} # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+  useLimRestApi: true # Allowed values: true, false. This should be set to true if you plan on using the Linux version of WebInspect scanner
+utilityWorkerServiceSettings:
+  rootUrl: http://scancentral-dast-utility-service:5000
+dastApiSSLSettings:
+  sSLPreferenceType: NoSSL # Allowed values: GenerateCertificate, UseExistingCertificate, NoSSL
+  # generateCertificateModel is required if sSLPreferenceType =  GenerateCertificate
+  #generateCertificateModel:
+  #  certificateDirectory: c:\directory_where_certificate_is_saved
+  #  host: dast-api
+  #  password: password # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+  #  validity: 1000
+  #  location: Alpharetta
+  #  email: email@domain.com
+  # existingCertificateModel is required if sSLPreferenceType =  UseExistingCertificate
+  #existingCertificateModel:
+  #  certificateFullPath: c:\path_to_cert\dast_api.cert
+  #  password: password # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+utilityWorkerServiceSSLSettings:
+  sSLPreferenceType: NoSSL # Allowed values: GenerateCertificate, UseExistingCertificate, NoSSL
+  # generateCertificateModel is required if sSLPreferenceType =  GenerateCertificate
+  #generateCertificateModel:
+  #  certificateDirectory: c:\directory_where_certificate_is_saved
+  #  host: dast-utility-service
+  #  password: password # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+  #  validity: 1000
+  #  location: Alpharetta
+  #  email: email@domain.com
+  ## existingCertificateModel is required if sSLPreferenceType =  UseExistingCertificate
+  #existingCertificateModel:
+  #  certificateFullPath: c:\path_to_cert\dast_utility_service.cert
+  #  password: password # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+environmentSettings:
+  allowNonTrustedServerCertificate: true # Allowed values: true, false
+  proxySettings:
+    useProxy: false # Allowed values: true, false
+    proxyAddress: http://proxy-instance.com:8080
+    proxyPassword: password # An encrypted password is recommended. The password can be encrypted using the 'encrypt' command.
+    proxyUserName: username
+    proxyBypassList: dast-api,dast-utility-service,lim,ssc-demo-webapp
+applySecureBase: true # Allowed values: true, false
+# secureBasePath is required if applySecureBase =  true
+#secureBasePath: /app/DefaultData.zip
+#secureBasePath: c:\path_to_securebase_data\DefaultData.zip
+debrickedSettings:
+  accessToken: ebcdd76f1517a129f423fc27190a194c697c0d6845f5c37a # The access token obtained from Debricked.
+fortifyConnectServerSettings:
+  disableFortifyConnectServer: false # Allowed values: true, false
+  internalHost: scancentral-dast-fortifyconnect # The internal host name for the Fortify Connect Server
+  internalPort: 2022 # The internal port for the Fortify Connect Server
+  externalHost: 35.176.81.197 # The external host name for the Fortify Connect Server
+  externalPort: 2022 # The external port for the Fortify Connect Server
+  keyPassphrase: 'FortifyDemo'
+  privateKeyContents: ''
+  publicKeyContents: ''

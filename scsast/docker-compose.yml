@@ -1,0 +1,55 @@
+services:
+
+  scancentral-sast-controller:
+    image: fortifydocker/scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_VERSION}
+    container_name: "scancentral-sast-controller"
+    restart: always
+    ports: 
+      - "${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}:8080"
+#      - "8445:8443"
+    volumes:
+      - ftfydata_scsast_ctrl:/fortify
+    environment:
+      - SCANCENTRAL_CONFIG_WORKER_AUTH_TOKEN=FortifyDemo
+      - SCANCENTRAL_CONFIG_CLIENT_AUTH_TOKEN=FortifyDemo
+      - SCANCENTRAL_CONFIG_SSC_SCANCENTRAL_CTRL_SECRET=FortifyDemo
+      - SCANCENTRAL_CONFIG_SSC_URL=http://ssc-demo-webapp:${SSC_PORT_INTERNAL}
+      - SCANCENTRAL_CONFIG_THIS_URL=http://scancentral-sast-controller.onfortify.com:${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}/scancentral-ctrl
+      - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.0.0.0/8,10.0.0.0/8
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl"]
+      interval: 90s
+      timeout: 10s
+      retries: 3
+      start_period: 40s      
+    networks:
+      - ftfydemo_net
+  
+  scancentral-sast-sensor:
+    image: fortifydocker/scancentral-sast-sensor:${SCANCENTRAL_SAST_SENSOR_VERSION}
+    container_name: "scancentral-sast-sensor"
+    restart: always
+    depends_on:
+      scancentral-sast-controller:
+        condition: service_healthy
+    volumes:
+      - ftfydata_scsast_sensor:/fortify
+      - type: bind
+        source: ../ssc/fortify.license
+        target: /app/sca/fortify.license
+    environment:
+      - SCANCENTRAL_ENABLE=1
+      - SCANCENTRAL_URL=http://scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl
+      - SCANCENTRAL_WORKER_AUTH_TOKEN=FortifyDemo
+      - FORTIFY_UPDATE_URL=http://ssc-demo-webapp:${SSC_PORT_INTERNAL}
+      - FORTIFY_UPDATE_AUTO=1
+      - FORTIFY_UPDATE_ACCEPT_KEY=1
+    networks:
+      - ftfydemo_net
+
+networks:
+  ftfydemo_net:
+    external: true
+volumes:
+  ftfydata_scsast_ctrl:
+  ftfydata_scsast_sensor:
