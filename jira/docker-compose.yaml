@@ -1,0 +1,51 @@
+services: 
+
+  jira:
+    image: atlassian/jira-software:${JIRA_VERSION}
+    container_name: "jira"
+    ports:
+      - "${JIRA_WEB_PORT_EXTERNAL}:8080"
+    restart: always
+    volumes:
+      - jira_data:/var/atlassian/application-data/jira
+    environment:
+      - ATL_DB_TYPE=mysql
+      - ATL_DB_DRIVER=com.mysql.cj.jdbc.Driver
+      - ATL_JDBC_URL=jdbc:mysql://mysql:3306/jiradb
+      - ATL_JDBC_USER=jira
+      - ATL_JDBC_PASSWORD=password
+      - ATL_DB_SCHEMA_NAME=jiradb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 120s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      - mysql
+    networks:
+      - ftfydemo_net
+
+  mysql:
+    container_name: mysql
+    restart: always
+    image: mysql:8.0.43
+    ports:
+        - 3306:3306
+    environment:
+        - MYSQL_ROOT_PASSWORD=password
+        - MYSQL_DATABASE=jiradb
+        - MYSQL_USER=jira
+        - MYSQL_PASSWORD=password
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_bin, --default-storage-engine=INNODB, --max_allowed_packet=256M, --innodb_log_file_size=2GB, --transaction-isolation=READ-COMMITTED, --binlog_format=row]
+    volumes:
+        - jira_mysql_data:/var/lib/mysql
+    networks:
+      - ftfydemo_net
+
+networks:
+  ftfydemo_net:
+    external: true
+volumes:
+  jira_data:
+  jira_mysql_data:
