@@ -15,7 +15,7 @@ services:
       - "JWT__SecurityKey=aS1l6IUxmbf9X6PCVpmkG8vraqlpPFU9"
       - "DefaultAdministrator__Login=limadm"
       - "DefaultAdministrator__FullName=LIM Administrator"
-      - "DefaultAdministrator__Password=F)rt1fy!"
+      - "DefaultAdministrator__Password=F0rtifyPassword!"
       - "DefaultAdministrator__Email=limadm@scancentral.onfortify.com"
       - "Proxy__Mode=0"
     networks:

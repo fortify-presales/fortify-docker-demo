@@ -1,8 +1,7 @@
-# Fortify docker demo (Linux)
+# Fortify docker demo
 
-This repository contains some example docker compose files to setup a working Fortify ScanCentral SAST/DAST
-demo environment using the [fortifydocker](https://hub.docker.com/repositories/fortifydocker) images on Linux.
-It also includes Sonatype Nexus Repository, IQ Server and Jenkins for integrations. 
+This repository contains example docker compose files and scripts to setup a working Fortify ScanCentral SAST/DAST/SSC demo environment using the [fortifydocker](https://hub.docker.com/repositories/fortifydocker) images.
+It also includes optional Sonatype Nexus Repository, IQ Server and Jenkins setup for integrations. 
 
 ## Prerequisites
 
@@ -13,67 +12,67 @@ Install the latest version of docker for your target o/s, e.g. ubuntu.
 ### fortify.license file
 
 A working **fortify.license** file for SSC and ScanCentral SAST.
-Place this file in the "root" directory of the project.
+Place this file in the "files" directory of the project.
 
 ### Dockerhub ***fortifydocker*** credentials
 
-You will need Docker Hub credentials to access the private docker images in the [fortifydocker](https://hub.docker.com/u/fortifydocker) organisation.
+You will need Docker Hub credentials to access the private docker images in the [fortifydocker](https://hub.docker.com/u/fortifydocker) organisation. Please create a file called `demo.credentials` in the root directory
+with contents similar to the following:
 
-### ScanCentral DAST and WebInspect licenses
+```
+DOCKER_USERNAME=__YOUR_DOCKERHUB_USERNAME__
+DOCKER_PASSWORD=__YOUR_DOCKERHUB_PASSWORD__
+```
+
+### ScanCentral DAST licenses
+
+If using ScanCentral DAST, you will also need licenses that can be entered in Fortify LIM.
 
 ### Sonatype Nexus IQ Server license
 
+A working **sonatype.license** file for Sonatype Nexus IQ Server.
+Place this file in the "files" directory of the project.
+
 ## Environment preparation
 
-Edit the `.env` file if you wish to use any different versions of the products and/or different ports
+Edit the `demo.env` file if you to select different versions of the images to be installed,
+or change any of the default usernames or passwords.
 
-## Create Docker Network
+## Running the demo script
 
-If it does not already exist, create the docker network to be used with the following command:
+You can control the demo environment with the `demo.ps1` PowerShell script. Common actions:
 
-```aidl
-sudo docker network create ftfydemo_net
+- `start`: bring up the compose stack (creates volumes, networks, and containers). The script will also generate mkcert TLS certificates if needed and can apply an image tag override via `-LIMVersion`.
+- `stop`: stop (or `down`) the compose stack. By default `stop` performs `docker compose down`.
+- `status` / `ps`: show compose status or `docker ps` filtered to the project.
+- `logs`: show service logs; use `-Service <name>` and `-Follow` to tail (stream) logs.
+- `clean`: remove compose resources, named volumes, the demo network and the generated `certs/` directory.
+
+Examples
+
+```powershell
+# Start the full demo (uses demo.env for image tags)
+.\\demo.ps1 start
+
+# Start and override LIM image version
+.\\demo.ps1 start -LIMVersion 25.4.ubi.9
+
+# Tail LIM logs interactively
+.\\demo.ps1 logs -Service lim -Follow
+
+# Stop and remove containers (compose down)
+.\\demo.ps1 stop
+
+# Clean everything: stop, remove volumes, network and generated certs
+.\\demo.ps1 -Clean
 ```
 
-## Start  LIM
+Notes
 
-The License Infrastructure Manager (LIM) should be started separately to the rest of the containers.
-To do this execute the following commands:
+- If you need to regenerate the mkcert certificates, pass `-RecreateCerts` to `start`.
+- The `-ComposeDir` and `-ProjectName` parameters let you target alternate compose files or project names.
+- The script includes an automatic permission-fix for the LIM named volume on `start` (chown/chmod) to avoid runtime permission errors when LIM writes its database and certificates.
 
-```aidl
-cd lim
-docker compose --env-file ../.env up -d
-```
+---
 
-## Install License
-
-Navigate to LIM URL and install the license(s) that you require.
-
-## Start Containers
-
-Start the containers using the following:
-
-```aidl
-docker compose up -d
-```
-
-When the `ssc` container has started run the following script to reset the admin users password.
-
-```aidl
-./reset-ssc-admin-user.sh
-```
-
-## Remove Containers
-
-If you wish to remove the containers you can use the following command:
-
-```aidl
-docker compose down
-```
-
-Any data will be still remain in the volumes created, if you wish to remove the volumes then run the following command:
-
-```aidl
-docker volume rm fortify-docker-demo_ftfydata_jenkins fortify-docker-demo_ftfydata_scsast_ctrl fortify-docker-demo_ftfydata_scsast_sensor \
-  fortify-docker-demo_ftfydata_sonatype-logs fortify-docker-demo_ftfydata_sonatype-work fortify-docker-demo_ftfydata_ssc
-```  
+Kevin A. Lee (kadraman) - klee2@opentext.com

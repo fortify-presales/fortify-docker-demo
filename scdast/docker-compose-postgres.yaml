@@ -9,7 +9,7 @@ services:
     restart: always
     shm_size: 128mb
     environment:
-      - "POSTGRES_PASSWORD=F)rt1fy!"
+      - "POSTGRES_PASSWORD=F0rtifyPassword!"
     networks:
       - ftfydemo_net
 

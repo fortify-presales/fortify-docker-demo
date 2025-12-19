@@ -1,10 +1,7 @@
-.env
-fortify.license
-sonatype-license*
-scdast/dast-linux-start.tar.gz
-scdast/dast-windows-start.zip
-scdast/dast-linux-start
-scdast/dast-linux-sensor
-scdast/dast-windows-start
+files/fortify.license
+files/sonatype.license
 
 **/*.log
+certs
+tools
+demo.credentials

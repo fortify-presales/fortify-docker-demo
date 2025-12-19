@@ -1,0 +1,6 @@
+tls:
+  certificates:
+    - certFile: /certs/lim.ftfydemo.local.pem
+      keyFile: /certs/lim.ftfydemo.local-key.pem
+    - certFile: /certs/ssc.ftfydemo.local.pem
+      keyFile: /certs/ssc.ftfydemo.local-key.pem
