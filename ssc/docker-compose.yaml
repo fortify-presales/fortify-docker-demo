@@ -1,20 +1,5 @@
 services:
 
-  mysql-db:
-    image: "mysql:8.0"
-    container_name: "mysql-db"
-    ports:
-      - "3306:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOTPASS}
-      MYSQL_DATABASE: ${MYSQL_DB}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASS}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - ftfydemo_net
-
   ssc:
     image: "fortifydocker/ssc-webapp:${SSC_VERSION}"
     container_name: ssc

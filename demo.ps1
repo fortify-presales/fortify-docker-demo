@@ -1,6 +1,6 @@
 param(
   [Parameter(Position=0)]
-  [ValidateSet('start','stop','status','ps','logs','help','clean')]
+  [ValidateSet('start','stop','status','ps','logs','config','help','clean')]
   [string]$Action = 'status',
 
   [Alias('d')]
@@ -15,6 +15,13 @@ param(
   [string]$Service,
 
   [switch]$Follow,
+
+  # PowerShell-style action switches (map to positional $Action later)
+  [switch]$Start,
+  [switch]$Stop,
+  [switch]$Status,
+  [switch]$Ps,
+  [switch]$Logs,
 
   [Alias('c')]
   [string]$CredFile = 'demo.credentials'
@@ -36,8 +43,25 @@ param(
   [string]$NetworkName = 'ftfydemo_net'
 )
 
+# Map PowerShell-style action switches to the positional/action parameter.
+# If a user passes one of -Start/-Stop/-Status/-Ps/-Logs/-Clean, set `$Action`
+# accordingly. If multiple are provided, error out.
+$explicitActions = @()
+if ($PSBoundParameters.ContainsKey('Start'))  { $explicitActions += 'start' }
+if ($PSBoundParameters.ContainsKey('Stop'))   { $explicitActions += 'stop' }
+if ($PSBoundParameters.ContainsKey('Status')) { $explicitActions += 'status' }
+if ($PSBoundParameters.ContainsKey('Ps'))     { $explicitActions += 'ps' }
+if ($PSBoundParameters.ContainsKey('Logs'))   { $explicitActions += 'logs' }
+if ($PSBoundParameters.ContainsKey('Clean'))  { $explicitActions += 'clean' }
+if ($explicitActions.Count -gt 1) {
+  Write-Error 'Only one action switch may be specified (e.g. -Start or -Stop).'
+  exit 1
+} elseif ($explicitActions.Count -eq 1) {
+  $Action = $explicitActions[0]
+}
+
 function Show-Usage {
-  Write-Output 'Usage: pwsh ./demo.ps1 <start|stop|status|ps|logs|help|clean> [-ComposeDir <dir>] [-ProjectName <name>] [-Service <service>] [-Profile <profile>] [-Follow]'
+  Write-Output 'Usage: pwsh ./demo.ps1 <start|stop|status|ps|logs|config|help|clean> [-ComposeDir <dir>] [-ProjectName <name>] [-Service <service>] [-Profile <profile>] [-Follow]'
   Write-Output ''
   Write-Output 'Examples:'
   Write-Output '  pwsh ./demo.ps1 start -ComposeDir compose -Profile traefik'
@@ -45,6 +69,7 @@ function Show-Usage {
   Write-Output '  pwsh ./demo.ps1 status -ComposeDir compose'
   Write-Output '  pwsh ./demo.ps1 ps -ComposeDir compose'
     Write-Output '  pwsh ./demo.ps1 logs -ComposeDir compose -Service traefik -Follow'
+    Write-Output '  pwsh ./demo.ps1 config -ComposeDir compose  # show resolved compose config (uses --profile default)'
     Write-Output ''
     Write-Output 'Options:'
     Write-Output '  -RecreateCerts    Force regeneration of mkcert certificates in ./certs'
@@ -165,6 +190,57 @@ function Update-ComposeFilesToEnvVars {
   Write-Output $proc
 }
 
+# Scan compose images and check access for each image found
+function Scan-And-Check-ComposeImages {
+  param(
+    [Parameter(Mandatory=$true)][object[]]$Files,
+    [hashtable]$Versions,
+    [hashtable]$Creds,
+    [string]$CredPath
+  )
+
+  $images = Parse-Compose-Images -Files $Files
+  if (-not $images -or $images.Count -eq 0) { Write-Output 'No images found in compose files to check.'; return }
+
+  foreach ($img in $images) {
+    $repo = $img
+    $tag = $null
+    if ($repo -match '^(.*?):([^:/]+)$') { $repo = $matches[1]; $tag = $matches[2] }
+
+    $tagFromVersions = Get-ImageTagFromVersions -Repo $repo -Versions $Versions
+    if ($tagFromVersions) { $check = "${repo}:$tagFromVersions" }
+    elseif ($tag) { $check = "${repo}:$tag" }
+    else { $check = $repo }
+
+    Write-Output ("Checking access to image: {0}" -f $check)
+    try {
+      $can = CanAccess-PrivateRepo -Repo $check -Creds $Creds
+      if (-not $can) {
+        Write-Warning ("Cannot access image {0} anonymously." -f $check)
+        if ($CredPath -and (Test-Path $CredPath)) {
+          Write-Output ("Found credentials file at {0} - attempting docker login." -f $CredPath)
+          $ok = Ensure-DockerLogin -Creds $Creds
+          if ($ok) {
+            if (CanAccess-PrivateRepo -Repo $check -Creds $Creds) {
+              Write-Output ("Successfully authenticated and can access {0}." -f $check)
+            } else {
+              Write-Warning ("Login succeeded but still cannot access {0}." -f $check)
+            }
+          } else {
+            Write-Warning ("Docker login using credentials from {0} failed." -f $CredPath)
+          }
+        } else {
+          Write-Warning ("No credentials file at {0} - you may need to run 'docker login' manually." -f $CredPath)
+        }
+      } else {
+        Write-Output ("Can access {0}" -f $check)
+      }
+    } catch {
+      Write-Warning ("Error while checking {0}: {1}" -f $check, $_.Exception.Message)
+    }
+  }
+}
+
 # credential helper functions (must be defined before use)
 function Read-Creds {
   param([string]$Path)
@@ -229,7 +305,7 @@ function Read-Versions {
   return $map
 }
 
-# Given a repo name like 'fortifydocker/ssc-webapp', try to find a tag in the versions map.
+# Given a repo name like 'fortifydocker/ssc-demo-webapp', try to find a tag in the versions map.
 function Get-ImageTagFromVersions {
   param(
     [string]$Repo,
@@ -268,12 +344,59 @@ function CanAccess-PrivateRepo {
   }
 
   if ($tag) {
+    # Try local docker CLI first
     try {
       $out = & docker manifest inspect "docker.io/${repoName}:$tag" 2>&1
       if ($LASTEXITCODE -eq 0) { return $true }
-      $txt = ($out -join "`n") -as [string]
-      if ($txt -match 'unauthorized|authentication required|401|unauthenticated') { return $false }
-      return $false
+      Write-Verbose ("docker manifest inspect output: {0}" -f ($out -join '`n'))
+    } catch {
+      Write-Verbose ("docker manifest inspect exception: {0}" -f $_.Exception.Message)
+    }
+
+    # If docker manifest inspect failed, fall back to registry HTTP manifest API using token flow
+    try {
+      $repoForAuth = $repoName
+      if ($repoForAuth -notmatch '/') { $repoForAuth = "library/$repoForAuth" }
+      $tokenUrl = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$repoForAuth:pull"
+
+      $headers = @{}
+      if ($Creds -and $Creds.Count -gt 0) {
+        $user = Get-CredValue -Creds $Creds -Key 'DOCKER_USERNAME'
+        $pass = Get-CredValue -Creds $Creds -Key 'DOCKER_PASSWORD'
+        if ($user -and $pass) {
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$user`:$pass"))
+          $headers['Authorization'] = "Basic $basic"
+        }
+      }
+
+      Write-Verbose ("Requesting token from: {0}" -f $tokenUrl)
+      if ($headers.ContainsKey('Authorization')) { Write-Verbose 'Using Basic Authorization header for token request' } else { Write-Verbose 'No Basic auth header for token request (anonymous)' }
+      $tokenResp = Invoke-RestMethod -Uri $tokenUrl -Headers $headers -Method GET -ErrorAction Stop
+      if ($null -ne $tokenResp) { Write-Verbose ("Token response keys: {0}" -f ($tokenResp.PSObject.Properties.Name -join ',')) }
+      $token = $null
+      if ($tokenResp -and $tokenResp.access_token) { $token = $tokenResp.access_token }
+      elseif ($tokenResp -and $tokenResp.token) { $token = $tokenResp.token }
+      if ($token) { Write-Verbose ("Received token length: {0}" -f $token.Length) } else { Write-Verbose 'No token found in token response' ; return $false }
+
+      $manifestUrl = "https://registry-1.docker.io/v2/$repoForAuth/manifests/$tag"
+      $manifestHeaders = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json' }
+      Write-Verbose ("Requesting manifest from: {0}" -f $manifestUrl)
+      try {
+        Invoke-RestMethod -Uri $manifestUrl -Headers $manifestHeaders -Method GET -ErrorAction Stop | Out-Null
+        Write-Verbose 'Manifest request succeeded'
+        return $true
+      } catch {
+        Write-Verbose ("Manifest request failed: {0}" -f $_.Exception.Message)
+        try {
+          $resp = $_.Exception.Response
+          if ($resp) {
+            try { $code = $resp.StatusCode.value__ } catch { $code = $null }
+            try { $desc = $resp.StatusDescription } catch { $desc = $null }
+            Write-Verbose ("Manifest HTTP response: {0} {1}" -f $code, $desc)
+          }
+        } catch {}
+        return $false
+      }
     } catch {
       return $false
     }
@@ -379,7 +502,7 @@ function Ensure-DockerNetworkExists {
   }
 }
 
-# Ensure LIM data volume directories are writable by the LIM runtime user (UID 1002:GID 1000).
+# Ensure LIM data volume directories are writable by the LIM runtime user (UID 1001:GID 1001).
 function Ensure-LIMVolumePermissions {
   param([string]$ProjectName)
   $candidates = @()
@@ -394,7 +517,8 @@ function Ensure-LIMVolumePermissions {
       if ($LASTEXITCODE -eq 0) {
         Write-Output ("Fixing ownership/permissions on volume {0}" -f $v)
         try {
-          & docker run --rm -v "${v}:/data" --platform linux alpine:3.18 sh -c 'chown -R 1002:1000 /data || true; chmod -R u+rwX,g+rwX /data/database /data/certificates || true' | Out-Null
+          # Use numeric UID:GID from the LIM image (limuser = 1001:1001) to ensure files are owned by the runtime user
+          & docker run --rm -v "${v}:/data" --platform linux alpine:3.18 sh -c 'chown -R 1001:1001 /data || true; chmod -R u+rwX,g+rwX /data/database /data/certificates || true' | Out-Null
         } catch {
           Write-Warning ("Failed to run permission-fix container for volume {0}: {1}" -f $v, $_.Exception.Message)
         }
@@ -440,7 +564,7 @@ function Do-Cleanup {
   }
 
   # Known volumes that the demo uses (best-effort removal)
-  $volumesToRemove = @('ftfydata_lim','ftfydemo_ftfydata_lim','compose_ftfydata_lim','ftfydemo_traefik-letsencrypt')
+  $volumesToRemove = @('ftfydata_lim','ftfydata_mysql','ftfydata_ssc')
   foreach ($v in $volumesToRemove) {
     try {
       & docker volume inspect $v > $null 2>&1
@@ -530,34 +654,12 @@ switch ($Action) {
     if ($Service) { $composeArgs += $Service }
     # Only perform private-repo access check when starting/pulling images
     try {
-      $privateRepo = 'fortifydocker/ssc-webapp'
       $credPath = if ([IO.Path]::IsPathRooted($CredFile)) { $CredFile } else { Join-Path -Path (Get-Location) -ChildPath $CredFile }
       $creds = @{}
       if (Test-Path $credPath) { $creds = Read-Creds -Path $credPath }
 
-      $tag = Get-ImageTagFromVersions -Repo $privateRepo -Versions $versions
-      if ($tag) { $checkRepo = "${privateRepo}:$tag" } else { $checkRepo = $privateRepo }
-      $canAccess = CanAccess-PrivateRepo -Repo $checkRepo -Creds $creds
-      if (-not $canAccess) {
-        Write-Output ("Cannot access private repo {0} anonymously." -f $privateRepo)
-        if ($creds.Count -gt 0) {
-          Write-Output ("Found credentials file at {0} - attempting docker login." -f $credPath)
-          $ok = Ensure-DockerLogin -Creds $creds
-          if ($ok) {
-            if (CanAccess-PrivateRepo -Repo $privateRepo -Creds $creds) {
-              Write-Output ("Successfully authenticated and can access private repo {0}." -f $privateRepo)
-            } else {
-              Write-Warning ("Login succeeded but still cannot access {0}." -f $privateRepo)
-            }
-          } else {
-            Write-Warning "Docker login using credentials from $credPath failed."
-          }
-        } else {
-          Write-Warning ("No credentials file at {0} - you may need to run 'docker login' manually." -f $credPath)
-        }
-      } else {
-        Write-Output ("Can access private repo {0} (already authenticated or public)." -f $privateRepo)
-      }
+      Write-Output 'Scanning compose files for image access...'
+      Scan-And-Check-ComposeImages -Files $composeFiles -Versions $versions -Creds $creds -CredPath $credPath
     } catch {}
     # Ensure requested docker network exists (create if missing)
     if ($NetworkName) {
@@ -632,7 +734,14 @@ switch ($Action) {
     }
 
     Write-Output ('Running: {0}' -f ($composeArgs -join ' '))
-    $rc = Invoke-Compose -ComposeArgs $composeArgs
+    # Ensure compose runs from the repository/script directory so relative host paths resolve portably
+    $scriptDir = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } elseif ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+    Push-Location $scriptDir
+    try {
+      $rc = Invoke-Compose -ComposeArgs $composeArgs
+    } finally {
+      Pop-Location
+    }
     if ($rc -eq 0) {
       # After compose creates volumes/containers, ensure LIM volume directories are writable
       Ensure-LIMVolumePermissions -ProjectName $ProjectName
@@ -680,8 +789,36 @@ switch ($Action) {
     Invoke-Compose -ComposeArgs $composeArgs
     exit 0
   }
+  'config' {
+    # Show resolved compose configuration. Use provided profile or default 'default' when supported.
+    $profileToUse = if ($PSBoundParameters.ContainsKey('Profile')) { $Profile } else { 'default' }
+    if ($profileToUse -and (Supports-Profile)) {
+      $composeArgs = $baseArgs + @('--profile', $profileToUse, 'config')
+    } else {
+      if ($PSBoundParameters.ContainsKey('Profile')) { Write-Warning ('Compose command does not support --profile; ignoring profile "{0}".' -f $Profile) }
+      $composeArgs = $baseArgs + @('config')
+    }
+    Write-Output ('Running: {0}' -f ($composeArgs -join ' '))
+    $rc = Invoke-Compose -ComposeArgs $composeArgs
+    exit $rc
+  }
   'logs' {
-    $composeArgs = $baseArgs + @('logs')
+    # Show the last 200 lines by default and allow following with -Follow
+    # Try running with the profile (explicit or default) first; if that fails, retry without --profile.
+    $profileToUse = if ($PSBoundParameters.ContainsKey('Profile')) { $Profile } else { 'default' }
+
+    if ($profileToUse) {
+      $composeArgsAttempt = $baseArgs + @('--profile', $profileToUse, 'logs','--tail','200')
+      if ($Follow) { $composeArgsAttempt += '-f' }
+      if ($Service) { $composeArgsAttempt += $Service }
+      Write-Output ('Running (attempt with --profile): {0}' -f ($composeArgsAttempt -join ' '))
+      $rc = Invoke-Compose -ComposeArgs $composeArgsAttempt
+      if ($rc -eq 0) { exit $rc }
+      Write-Warning ('`--profile {0}` attempt failed (exit {1}); retrying without --profile.' -f $profileToUse, $rc)
+    }
+
+    # Fallback: run without --profile
+    $composeArgs = $baseArgs + @('logs','--tail','200')
     if ($Follow) { $composeArgs += '-f' }
     if ($Service) { $composeArgs += $Service }
     Write-Output ('Running: {0}' -f ($composeArgs -join ' '))
@@ -717,7 +854,7 @@ function Read-Versions {
   return $map
 }
 
-# Given a repo name like 'fortifydocker/ssc-webapp', try to find a tag in the versions map.
+# Given a repo name like 'fortifydocker/ssc-demo-webapp', try to find a tag in the versions map.
 function Get-ImageTagFromVersions {
   param(
     [string]$Repo,

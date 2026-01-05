@@ -38,6 +38,28 @@ Place this file in the "files" directory of the project.
 Edit the `demo.env` file if you to select different versions of the images to be installed,
 or change any of the default usernames or passwords.
 
+## demo.ps1 details
+
+`demo.ps1` is a PowerShell helper that wraps `docker compose` and adds convenience features for this demo:
+
+- **Actions:** `start`, `stop`, `status`, `ps`, `logs`, `config`, `clean`, `help`.
+- **`config` action:** shows the resolved compose configuration. The script passes `--profile default` to `docker compose config` when the compose CLI supports profiles, so services defined under the `default` profile are included. Use `-Profile` to override the profile used.
+- **`--env-file` / `demo.env`:** when `demo.env` (or a custom `-ImageVersionsFile`) exists the script adds it as a global `--env-file` to all compose commands so image tag overrides and environment values are applied consistently.
+- **Logs behavior:** `.\\demo.ps1 logs` returns the last 200 lines by default; use `-Follow` to stream logs.
+- **LIM volume permissions:** `start` runs a best-effort permission fix (chown to the LIM runtime UID) on the LIM named volume to avoid runtime permission errors.
+- **mkcert:** the script will attempt to generate TLS certs for `lim.ftfydemo.local` and `ssc.ftfydemo.local` using `mkcert` and will prompt for elevation if necessary.
+
+## Windows shim (optional)
+
+For convenience on Windows you can create a shim in a directory on your PATH (for example `C:\Users\<you>\bin`) named `demo.cmd` containing:
+
+```bat
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\<you>\repos\fortify-docker-demo\demo.ps1" %*
+```
+
+This lets you run `demo` from cmd.exe or PowerShell with the same arguments (e.g. `demo start`).
+
 ## Running the demo script
 
 You can control the demo environment with the `demo.ps1` PowerShell script. Common actions:
@@ -64,7 +86,7 @@ Examples
 .\\demo.ps1 stop
 
 # Clean everything: stop, remove volumes, network and generated certs
-.\\demo.ps1 -Clean
+.\\demo.ps1 clean
 ```
 
 Notes
