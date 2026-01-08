@@ -1,32 +1,5 @@
 services:
-  traefik:
-    image: traefik:${TRAEFIK:-latest}
-    profiles:
-    - default
-    - traefik
-    command:
-    - --api.dashboard=true
-    - --api.insecure=true
-    - --entrypoints.web.address=:88
-    - --entrypoints.websecure.address=:443
-    - --providers.docker=true
-    - --providers.docker.exposedbydefault=false
-    - --certificatesresolvers.le.acme.httpchallenge=true
-    - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
-    - --certificatesresolvers.le.acme.email=admin@example.com
-    - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
-    - --providers.file.filename=/etc/traefik/dynamic/dynamic_tls.yml
-    ports:
-    - 88:88
-    - 443:443
-    - 8080:8080
-    volumes:
-    - /var/run/docker.sock:/var/run/docker.sock:ro
-    - traefik-letsencrypt:/letsencrypt
-    - ../certs:/certs:ro
-    - ./traefik/dynamic_tls.yml:/etc/traefik/dynamic/dynamic_tls.yml:ro
-    networks:
-    - ftfydemo_net
+
 networks:
   ftfydemo_net:
     external: true

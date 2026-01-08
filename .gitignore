@@ -3,5 +3,5 @@ files/sonatype.license
 
 **/*.log
 certs
-tools
 demo.credentials
+.fortify

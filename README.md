@@ -55,7 +55,7 @@ For convenience on Windows you can create a shim in a directory on your PATH (fo
 
 ```bat
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\<you>\repos\fortify-docker-demo\demo.ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<this_location>\demo.ps1" %*
 ```
 
 This lets you run `demo` from cmd.exe or PowerShell with the same arguments (e.g. `demo start`).
@@ -74,25 +74,25 @@ Examples
 
 ```powershell
 # Start the full demo (uses demo.env for image tags)
-.\\demo.ps1 start
+demo start
 
 # Start and override LIM image version
-.\\demo.ps1 start -LIMVersion 25.4.ubi.9
+demo start -LIMVersion 25.4.ubi.9
 
 # Tail LIM logs interactively
-.\\demo.ps1 logs -Service lim -Follow
+demo logs -Service lim -Follow
 
 # Stop and remove containers (compose down)
-.\\demo.ps1 stop
+demo stop
 
 # Clean everything: stop, remove volumes, network and generated certs
-.\\demo.ps1 clean
+demo clean
 ```
 
 Notes
 
 - If you need to regenerate the mkcert certificates, pass `-RecreateCerts` to `start`.
-- The `-ComposeDir` and `-ProjectName` parameters let you target alternate compose files or project names.
+- The `-ComposeDir` and `-ProjectName` parameters let you target alternate compose files or project names, if not supplied they will be default to the `compose` directory and `ftfydemo` for the project name.
 - The script includes an automatic permission-fix for the LIM named volume on `start` (chown/chmod) to avoid runtime permission errors when LIM writes its database and certificates.
 
 ---
