@@ -38,62 +38,102 @@ Place this file in the "files" directory of the project.
 Edit the `demo.env` file if you to select different versions of the images to be installed,
 or change any of the default usernames or passwords.
 
-## demo.ps1 details
+## Docker Hub login
 
-`demo.ps1` is a PowerShell helper that wraps `docker compose` and adds convenience features for this demo:
+The images used in this demo (`fortifydocker/*`) are hosted in a private Docker Hub organisation, so you must
+authenticate before pulling or starting the stack. Using the `demo.credentials` file created above:
 
-- **Actions:** `start`, `stop`, `status`, `ps`, `logs`, `config`, `clean`, `help`.
-- **`config` action:** shows the resolved compose configuration. The script passes `--profile default` to `docker compose config` when the compose CLI supports profiles, so services defined under the `default` profile are included. Use `-Profile` to override the profile used.
-- **`--env-file` / `demo.env`:** when `demo.env` (or a custom `-ImageVersionsFile`) exists the script adds it as a global `--env-file` to all compose commands so image tag overrides and environment values are applied consistently.
-- **Logs behavior:** `.\\demo.ps1 logs` returns the last 200 lines by default; use `-Follow` to stream logs.
-- **LIM volume permissions:** `start` runs a best-effort permission fix (chown to the LIM runtime UID) on the LIM named volume to avoid runtime permission errors.
-- **mkcert:** the script will attempt to generate TLS certs for `lim.ftfydemo.local` and `ssc.ftfydemo.local` using `mkcert` and will prompt for elevation if necessary.
-
-## Windows shim (optional)
-
-For convenience on Windows you can create a shim in a directory on your PATH (for example `C:\Users\<you>\bin`) named `demo.cmd` containing:
-
-```bat
-@echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<this_location>\demo.ps1" %*
+```bash
+# --password-stdin avoids exposing the password in your shell history or process list
+set -a; source demo.credentials; set +a
+echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin
 ```
 
-This lets you run `demo` from cmd.exe or PowerShell with the same arguments (e.g. `demo start`).
+Or log in interactively without a credentials file:
 
-## Running the demo script
-
-You can control the demo environment with the `demo.ps1` PowerShell script. Common actions:
-
-- `start`: bring up the compose stack (creates volumes, networks, and containers). The script will also generate mkcert TLS certificates if needed and can apply an image tag override via `-LIMVersion`.
-- `stop`: stop (or `down`) the compose stack. By default `stop` performs `docker compose down`.
-- `status` / `ps`: show compose status or `docker ps` filtered to the project.
-- `logs`: show service logs; use `-Service <name>` and `-Follow` to tail (stream) logs.
-- `clean`: remove compose resources, named volumes, the demo network and the generated `certs/` directory.
-
-Examples
-
-```powershell
-# Start the full demo (uses demo.env for image tags)
-demo start
-
-# Start and override LIM image version
-demo start -LIMVersion 25.4.ubi.9
-
-# Tail LIM logs interactively
-demo logs -Service lim -Follow
-
-# Stop and remove containers (compose down)
-demo stop
-
-# Clean everything: stop, remove volumes, network and generated certs
-demo clean
+```bash
+docker login
 ```
 
-Notes
+## Running the demo with Docker Compose
 
-- If you need to regenerate the mkcert certificates, pass `-RecreateCerts` to `start`.
-- The `-ComposeDir` and `-ProjectName` parameters let you target alternate compose files or project names, if not supplied they will be default to the `compose` directory and `ftfydemo` for the project name.
-- The script includes an automatic permission-fix for the LIM named volume on `start` (chown/chmod) to avoid runtime permission errors when LIM writes its database and certificates.
+### 1. Create the external Docker network
+
+The compose files expect an external network named `ftfydemo_net`:
+
+```bash
+docker network create ftfydemo_net
+```
+
+### 2. Set up TLS for Traefik
+
+Traefik routes `lim.<yourdomain>` and `ssc.<yourdomain>` over HTTPS. Two options:
+
+**Option A: Real DNS + Let's Encrypt (recommended if you control public DNS for a domain)**
+
+Point DNS A records for your chosen hostnames (e.g. `lim.onfortify.com`, `ssc.onfortify.com`) at this host's
+public IP, update the `Host()` rules in [lim/docker-compose.yml](lim/docker-compose.yml) and
+[ssc/docker-compose.yaml](ssc/docker-compose.yaml) to match, and set a real contact address in `ACME_EMAIL` in
+`demo.env`. Traefik is already configured (see the `traefik` service `command` in `docker-compose.yml`) to use the
+TLS-ALPN-01 challenge, which only needs port `443` open — no port 80 required. Certificates are issued
+automatically the first time each hostname is requested.
+
+**Option B: mkcert self-signed certs (local/offline use)**
+
+Use [mkcert](https://github.com/FiloSottile/mkcert) to generate locally-trusted certificates instead:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install -y mkcert libnss3-tools
+
+# macOS
+brew install mkcert nss
+
+# Windows
+choco install mkcert
+```
+
+```bash
+mkcert -install   # installs the local mkcert CA into your OS/browser trust store (one-time)
+mkdir -p certs
+mkcert -cert-file certs/lim.ftfydemo.local.pem -key-file certs/lim.ftfydemo.local-key.pem lim.ftfydemo.local
+mkcert -cert-file certs/ssc.ftfydemo.local.pem -key-file certs/ssc.ftfydemo.local-key.pem ssc.ftfydemo.local
+```
+
+Add entries to your `/etc/hosts` file (or equivalent) so the hostnames resolve to your Docker host, e.g.:
+
+```
+127.0.0.1 lim.ftfydemo.local ssc.ftfydemo.local
+```
+
+### 3. Start the stack
+
+```bash
+# Start everything in the "default" profile (traefik, lim, ssc, jenkins, jira, nexus, scancentral-sast, ...)
+docker compose --env-file demo.env --profile default up -d
+
+# Or start only specific profiles, e.g. traefik + lim + ssc
+docker compose --env-file demo.env up -d traefik lim ssc
+```
+
+### 4. Check status and logs
+
+```bash
+docker compose --env-file demo.env ps
+docker compose --env-file demo.env logs -f lim
+```
+
+### 5. Stop / clean up
+
+```bash
+# Stop and remove containers
+docker compose --env-file demo.env down
+
+# Also remove named volumes, the network, and generated certs
+docker compose --env-file demo.env down -v
+docker network rm ftfydemo_net
+rm -rf certs
+```
 
 ---
 

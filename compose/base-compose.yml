@@ -1,7 +1,0 @@
-services:
-
-networks:
-  ftfydemo_net:
-    external: true
-volumes:
-  traefik-letsencrypt: null

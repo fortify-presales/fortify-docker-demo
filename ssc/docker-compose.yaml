@@ -1,26 +1,127 @@
 services:
 
-  ssc:
-    image: "fortifydocker/ssc-webapp:${SSC_VERSION}"
-    container_name: ssc
-    ports:
-      - "${SSC_PORT_EXTERNAL}:${SSC_PORT_INTERNAL}"
-    environment:
-      JAVA_OPTS: -Xms2g -Xmx4g
-      HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD: "${HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD}"
-      HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE: "${HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE}"
-      HTTP_SERVER_CERTIFICATE_KEY_PASSWORD_FILE: "${HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE}"
-      HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE: "${HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE}"
+  ssc-init:
+    image: "fortifydocker/ssc-demo-webapp:${FORTIFY_DOCKER__SSC_WEBAPP:-26.2.2}"
+    profiles:
+      - default
+      - ssc
+    environment: &env
+      HTTP_SERVER_CERTIFICATE_PASSWORD: 'passw0rd1'
+      HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE: "/fortify/secrets/keystore"
+      HTTP_SERVER_CERTIFICATE_KEY_PASSWORD_FILE: "/fortify/secrets/key-password"
+      HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE: "/fortify/secrets/keystore-password"
+      COM_FORTIFY_SSC_AUTOCONFIGPATH: "/fortify/secrets/ssc.autoconfig"
+      COM_FORTIFY_SSC_LICENSEPATH: '/app/fortify.license'
+      MYSQL_DATABASE: '${MYSQL_DATABASE:-sscdemodb}'
+      MYSQL_USER: '${MYSQL_USER:-sscdemodbuser}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-sscdemodbpassw0rd}'
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e -o pipefail
+
+        # Verify license file
+        if ! [ -f "$${COM_FORTIFY_SSC_LICENSEPATH}" ]; then
+          echo "SSC license file does not exist. Please check your setting in .env file"
+          exit 1
+        fi
+        if ! [ -r "$${COM_FORTIFY_SSC_LICENSEPATH}" ]; then
+          echo "SSC license file is not readable. Please check your setting in .env file"
+          exit 1
+        fi
+
+        if [ ! -e "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE}" ]; then
+          # Generate self-signed certificate for Tomcat HTTPS
+          mkdir -p /fortify/secrets
+          printf '%s\n' "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" > "$${HTTP_SERVER_CERTIFICATE_KEY_PASSWORD_FILE}"
+          printf '%s\n' "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" > "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_PASSWORD_FILE}"
+          keytool -genkey -alias ssc-demo-webapp -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -validity 365 \
+                  -keypass "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" -storepass "$${HTTP_SERVER_CERTIFICATE_PASSWORD}" \
+                  -dname "CN=localhost, O=Fortify" -keystore "$${HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE}"
+        fi
+
+        # Generate autoconfig file
+        cat <<EOF > "$${COM_FORTIFY_SSC_AUTOCONFIGPATH}"
+        datasourceProperties:
+          jdbc.url: 'jdbc:mysql://mysql:3306/$${MYSQL_DATABASE}?sessionVariables=collation_connection=utf8_bin&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true'
+          db.username: '$${MYSQL_USER}'
+          db.password: '$${MYSQL_PASSWORD}'
+        dbMigrationProperties:
+          migration.enabled: true
+        EOF
+
+        # Make created directory and files executable by the webapp service runtime user
+        chmod -R 'u=rwX,g=rX,o=' /fortify/secrets
     volumes:
-      - ./ssc.autoconfig:/opt/fortify/ssc/ssc.autoconfig:ro
-      - ./license:/opt/fortify/ssc/license:ro
-      - ./bundles:/opt/fortify/ssc/bundles:ro
-      - ./certs:/opt/fortify/ssc/certs:ro
-      - ftfydata_ssc_index:/opt/fortify/ssc/index
-      - ftfydata_ssc_conf:/opt/fortify/ssc/conf
-      - ftfydata_ssc_logs:/usr/local/tomcat/fortify/ssc/logs
+      - ./files/fortify.license:/app/fortify.license:ro
+      - ftfydata_ssc:/fortify
+    networks:
+      - ftfydemo_net
+
+  mysql:
+    image: "mysql:${FORTIFY_DOCKER__MYSQL:-8.4-oracle}"
+    mem_limit: 2G
+    profiles:
+      - default
+      - ssc
+    labels:
+      - traefik.enable=false
+    # Not exposing ports here - using internal network only
+    #ports:
+    #  - "3306:3306"
+    volumes:
+      - ftfydata_mysql:/var/lib/mysql
+      - ./mysql.cnf:/etc/mysql/conf.d/my.cnf:ro
+    restart: always
+    environment:
+      <<: *env
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-rootpassw0rd}"
+    command: --collation-server=utf8_bin --character-set-server=utf8 --max-allowed-packet=1G --innodb-log-file-size=512M --innodb-lock-wait-timeout=300 --default-storage-engine=INNODB --sql-mode=TRADITIONAL --innodb-buffer-pool-size=512M --max-connections=50 --host-cache-size=0 --skip-name-resolve --skip-log-bin
+    healthcheck:
+      test: "mysqladmin -hlocalhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent ping"
+      timeout: 3s
+      interval: 6s
+      start_period: 12s
+    cap_add:
+      - SYS_NICE  # Add CAP_SYS_NICE privilege, because mysql docker container uses mbind
+    networks:
+      - ftfydemo_net
     depends_on:
-      - mysql-db
+      ssc-init:
+        condition: service_completed_successfully
+
+  ssc:
+    image: "fortifydocker/ssc-demo-webapp:${FORTIFY_DOCKER__SSC_WEBAPP:-26.2.2}"
+    profiles:
+      - default
+      - ssc
+    mem_limit: 4G
+    environment:
+      <<: *env
+      HTTP_SERVER_SSC_PATH_PREFIX: '${SSC_URL_PREFIX-/}'
+      SSC_AUTOCONFIG_HOST_URL: 'https://${SSC_HOSTNAME-localhost}:${SSC_HTTPS_PORT-443}${SSC_URL_PREFIX-/}'
+      COM_FORTIFY_SSC_ENFORCESECURETRANSPORT: 'false'
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ssc-ftfydemo.rule=Host(`ssc.onfortify.com`)
+      - traefik.http.routers.ssc-ftfydemo.entrypoints=websecure
+      - traefik.http.routers.ssc-ftfydemo.tls=true
+      - traefik.http.routers.ssc-ftfydemo.tls.certresolver=le
+      - traefik.http.services.ssc-ftfydemo.loadbalancer.server.port=8080
+    restart: always
+    # Not exposing ports here - using Traefik to route instead
+    #ports:
+    #  - "${SSC_HTTPS_PORT-8443}:8443/tcp"
+    #  - "${SSC_HTTP_PORT-8080}:8080/tcp"
+    volumes:
+      - ./files/fortify.license:/app/fortify.license:ro
+      - ftfydata_ssc:/fortify
+    depends_on:
+      ssc-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
     networks:
       - ftfydemo_net
 
@@ -28,8 +129,6 @@ networks:
   ftfydemo_net:
     external: true
 volumes:
-  mysql_data:
-  ftfydata_ssc_index:
-  ftfydata_ssc_conf:
-  ftfydata_ssc_logs:
+  ftfydata_mysql: null
+  ftfydata_ssc: null
 

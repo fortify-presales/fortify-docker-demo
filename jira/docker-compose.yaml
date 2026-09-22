@@ -11,7 +11,7 @@ services:
     environment:
       - ATL_DB_TYPE=mysql
       - ATL_DB_DRIVER=com.mysql.cj.jdbc.Driver
-      - ATL_JDBC_URL=jdbc:mysql://mysql:3306/jiradb
+      - ATL_JDBC_URL=jdbc:mysql://jira-mysql:3306/jiradb
       - ATL_JDBC_USER=jira
       - ATL_JDBC_PASSWORD=password
       - ATL_DB_SCHEMA_NAME=jiradb
@@ -22,12 +22,12 @@ services:
       retries: 10
       start_period: 90s
     depends_on:
-      - mysql
+      - jira-mysql
     networks:
       - ftfydemo_net
 
-  mysql:
-    container_name: mysql
+  jira-mysql:
+    container_name: jira-mysql
     restart: always
     image: mysql:8.0.43
     ports:

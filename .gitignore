@@ -1,5 +1,8 @@
 files/fortify.license
 files/sonatype.license
+*.license
+**/files/fortify.license
+**/files/sonatype.license
 
 **/*.log
 certs

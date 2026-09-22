@@ -1,10 +1,20 @@
 services:
 
   lim:
-    image: "fortifydocker/lim:23.2.ubi.8"
-    container_name: "lim"
-    ports:
-      - "88:80"
+    image: "fortifydocker/lim:${FORTIFY_DOCKER__LIM:-26.2.ubi.9}"
+    profiles:
+      - default
+      - lim
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.lim-ftfydemo.rule=Host(`lim.onfortify.com`)
+      - traefik.http.routers.lim-ftfydemo.entrypoints=websecure
+      - traefik.http.routers.lim-ftfydemo.tls=true
+      - traefik.http.routers.lim-ftfydemo.tls.certresolver=le
+      - traefik.http.services.lim-ftfydemo.loadbalancer.server.port=80
+    # Not exposing ports here - using Traefik to route instead
+    #ports:
+    #  - "90:80"
     volumes:
       - ftfydata_lim:/app
     restart: always
@@ -13,9 +23,9 @@ services:
       - "JWT__ValidAudience=FortifyLimAuthAudience"
       - "JWT__ValidIssuer=FortifyLimAuthIssuer"
       - "JWT__SecurityKey=aS1l6IUxmbf9X6PCVpmkG8vraqlpPFU9"
-      - "DefaultAdministrator__Login=limadm"
+      - "DefaultAdministrator__Login=${LIM_USERNAME:-limadm}"
       - "DefaultAdministrator__FullName=LIM Administrator"
-      - "DefaultAdministrator__Password=F0rtifyPassword!"
+      - "DefaultAdministrator__Password=${LIM_PASSWORD:-F0rtifyPassword!}"
       - "DefaultAdministrator__Email=limadm@scancentral.onfortify.com"
       - "Proxy__Mode=0"
     networks:
@@ -25,4 +35,4 @@ networks:
   ftfydemo_net:
     external: true
 volumes:
-  ftfydata_lim:
+  ftfydata_lim: null
