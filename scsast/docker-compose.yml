@@ -22,6 +22,7 @@ services:
       - SCANCENTRAL_CONFIG_SSC_URL=https://${SSC_HOSTNAME:-ssc.onfortify.com}
       - SCANCENTRAL_CONFIG_THIS_URL=https://${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.onfortify.com}/scancentral-ctrl
       - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.0.0.0/8,10.0.0.0/8
+      - SCANCENTRAL_CONFIG_ROUTE_REMOTE_TRANSLATION_TO_NEXT_ODD_SAST_VERSION=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/scancentral-ctrl"]
       interval: 90s

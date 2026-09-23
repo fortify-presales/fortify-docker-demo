@@ -143,6 +143,10 @@ record must point to the Docker host so Traefik can obtain a Let's Encrypt certi
 The controller and sensor require token files and an internal TLS truststore in `scsast/secrets/`. These are runtime
 secrets and are ignored by git.
 
+New sensors initially appear in the **Unassigned Sensors Pool**. Assign the sensor to the controller's **Default Pool**
+before submitting jobs without a `-pool` option; otherwise, those jobs remain pending because they are routed to the
+Default Pool. Reassign the sensor after resetting the ScanCentral SAST controller data.
+
 #### Configure the SSC shared secret
 
 The controller reads the shared secret from `scsast/secrets/ssc-secret`. Retrieve it from the Docker host and enter
