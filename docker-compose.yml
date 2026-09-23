@@ -3,7 +3,7 @@ include:
   - lim/docker-compose.yml
   - ssc/docker-compose.yaml
   #- nexus/docker-compose.yaml
-  #- scsast/docker-compose.yml
+  - scsast/docker-compose.yml
   #- jenkins/docker-compose.yaml
   #- jira/docker-compose.yaml
 

@@ -12,7 +12,7 @@ Install the latest version of docker for your target o/s, e.g. ubuntu.
 ### fortify.license file
 
 A working **fortify.license** file for SSC and ScanCentral SAST.
-Place this file in the "files" directory of the project.
+Place this file at the repository root.
 
 ### Dockerhub ***fortifydocker*** credentials
 
@@ -116,6 +116,10 @@ docker compose --env-file demo.env --profile default up -d
 docker compose --env-file demo.env up -d traefik lim ssc
 ```
 
+When you first sign in to SSC at `https://ssc.onfortify.com/`, use the demo account `admin` with password `admin`.
+SSC prompts you to change this password on first login; for this demo, set it to `F0rtifyPassword!` before configuring
+ScanCentral integrations.
+
 ### 4. Check status and logs
 
 ```bash
@@ -123,7 +127,83 @@ docker compose --env-file demo.env ps
 docker compose --env-file demo.env logs -f lim
 ```
 
-### 5. Stop / clean up
+### 5. Start ScanCentral SAST
+
+The ScanCentral SAST profile starts SSC, the ScanCentral SAST Controller, and a Linux sensor:
+
+```bash
+docker compose --env-file demo.env --profile scsast up -d
+docker compose --env-file demo.env ps scancentral-sast-controller scancentral-sast-sensor
+```
+
+The controller is available at `https://scancentral-sast-controller.onfortify.com/scancentral-ctrl/`.
+Its public hostname is configured by `SCANCENTRAL_SAST_CONTROLLER_HOSTNAME` in `demo.env`; the corresponding DNS A
+record must point to the Docker host so Traefik can obtain a Let's Encrypt certificate.
+
+The controller and sensor require token files and an internal TLS truststore in `scsast/secrets/`. These are runtime
+secrets and are ignored by git.
+
+#### Configure the SSC shared secret
+
+The controller reads the shared secret from `scsast/secrets/ssc-secret`. Retrieve it from the Docker host and enter
+the exact value in the shared-secret field when configuring the ScanCentral SAST Controller in SSC:
+
+```bash
+sudo cat scsast/secrets/ssc-secret
+```
+
+In SSC, open **Administration > Configuration > ScanCentral SAST** and enter:
+
+- **Controller URL:** `https://scancentral-sast-controller.onfortify.com/scancentral-ctrl/`
+- **Shared secret:** the value retrieved from `scsast/secrets/ssc-secret`
+
+Save the configuration, then recycle SSC:
+
+```bash
+docker compose --env-file demo.env restart ssc
+docker compose --env-file demo.env ps ssc
+docker compose --env-file demo.env logs --tail 100 ssc
+```
+
+The `ssc` service should show `healthy`. Restarting the container preserves SSC configuration because it is stored in
+the `ftfydata_ssc` and `ftfydata_mysql` named volumes. Confirm the controller is still reachable with a valid TLS certificate:
+
+```bash
+curl -fsS -o /dev/null -w 'ScanCentral Controller HTTP %{http_code}\n' \
+	https://scancentral-sast-controller.onfortify.com/scancentral-ctrl/
+```
+
+For a non-demo deployment, replace the initial value with a random secret, then restart the controller and update
+the matching value in SSC:
+
+```bash
+openssl rand -base64 48 | tr -d '\n' | sudo tee scsast/secrets/ssc-secret >/dev/null
+sudo chown 1111:1111 scsast/secrets/ssc-secret
+sudo chmod 400 scsast/secrets/ssc-secret
+docker compose --env-file demo.env --profile scsast up -d --force-recreate scancentral-sast-controller
+```
+
+Store the secret in an approved password manager or secrets manager. Do not put it in `demo.env`, compose files, or git.
+
+#### Configure ScanCentral SAST clients
+
+ScanCentral SAST clients authenticate to the controller with the client authentication token stored on the Docker host
+at `scsast/secrets/client-auth-token`. Retrieve it securely:
+
+```bash
+sudo cat scsast/secrets/client-auth-token
+```
+
+On each Fortify ScanCentral SAST client, update its `client.properties` file with the retrieved value:
+
+```properties
+client_auth_token=<value from scsast/secrets/client-auth-token>
+```
+
+Keep this token in an approved password manager or secrets manager. If it is rotated, restart the controller and update
+`client_auth_token` in every client configuration before submitting new scan jobs.
+
+### 6. Stop / clean up
 
 ```bash
 # Stop and remove containers

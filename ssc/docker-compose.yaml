@@ -5,6 +5,7 @@ services:
     profiles:
       - default
       - ssc
+      - scsast
     environment: &env
       HTTP_SERVER_CERTIFICATE_PASSWORD: 'passw0rd1'
       HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE: "/fortify/secrets/keystore"
@@ -54,7 +55,7 @@ services:
         # Make created directory and files executable by the webapp service runtime user
         chmod -R 'u=rwX,g=rX,o=' /fortify/secrets
     volumes:
-      - ./files/fortify.license:/app/fortify.license:ro
+      - ../fortify.license:/app/fortify.license:ro
       - ftfydata_ssc:/fortify
     networks:
       - ftfydemo_net
@@ -65,6 +66,7 @@ services:
     profiles:
       - default
       - ssc
+      - scsast
     labels:
       - traefik.enable=false
     # Not exposing ports here - using internal network only
@@ -96,6 +98,7 @@ services:
     profiles:
       - default
       - ssc
+      - scsast
     mem_limit: 4G
     environment:
       <<: *env
@@ -115,7 +118,7 @@ services:
     #  - "${SSC_HTTPS_PORT-8443}:8443/tcp"
     #  - "${SSC_HTTP_PORT-8080}:8080/tcp"
     volumes:
-      - ./files/fortify.license:/app/fortify.license:ro
+      - ../fortify.license:/app/fortify.license:ro
       - ftfydata_ssc:/fortify
     depends_on:
       ssc-init:

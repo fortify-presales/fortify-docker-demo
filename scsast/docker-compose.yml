@@ -1,33 +1,43 @@
 services:
 
   scancentral-sast-controller:
-    image: fortifydocker/scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_VERSION}
-    container_name: "scancentral-sast-controller"
+    image: "fortifydocker/scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_VERSION:-26.2.1}"
+    profiles:
+      - scsast
     restart: always
-    ports: 
-      - "${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}:8080"
-#      - "8445:8443"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.scancentral-sast-controller.rule=Host(`${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.onfortify.com}`)
+      - traefik.http.routers.scancentral-sast-controller.entrypoints=websecure
+      - traefik.http.routers.scancentral-sast-controller.tls=true
+      - traefik.http.routers.scancentral-sast-controller.tls.certresolver=le
+      - traefik.http.services.scancentral-sast-controller.loadbalancer.server.port=8080
     volumes:
       - ftfydata_scsast_ctrl:/fortify
+      - ./secrets:/fortify/secrets:ro
     environment:
-      - SCANCENTRAL_CONFIG_WORKER_AUTH_TOKEN=FortifyDemo
-      - SCANCENTRAL_CONFIG_CLIENT_AUTH_TOKEN=FortifyDemo
-      - SCANCENTRAL_CONFIG_SSC_SCANCENTRAL_CTRL_SECRET=FortifyDemo
-      - SCANCENTRAL_CONFIG_SSC_URL=http://ssc-demo-webapp:${SSC_PORT_INTERNAL}
-      - SCANCENTRAL_CONFIG_THIS_URL=http://scancentral-sast-controller.onfortify.com:${SCANCENTRAL_SAST_CONTROLLER_PORT_EXTERNAL}/scancentral-ctrl
+      - SCANCENTRAL_WORKER_AUTH_TOKEN_FILE=/fortify/secrets/worker-auth-token
+      - SCANCENTRAL_CLIENT_AUTH_TOKEN_FILE=/fortify/secrets/client-auth-token
+      - SCANCENTRAL_SSC_SECRET_FILE=/fortify/secrets/ssc-secret
+      - SCANCENTRAL_CONFIG_SSC_URL=https://${SSC_HOSTNAME:-ssc.onfortify.com}
+      - SCANCENTRAL_CONFIG_THIS_URL=https://${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.onfortify.com}/scancentral-ctrl
       - SCANCENTRAL_CONFIG_SSC_REMOTE_IP=172.0.0.0/8,10.0.0.0/8
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/scancentral-ctrl"]
       interval: 90s
       timeout: 10s
       retries: 3
-      start_period: 40s      
+      start_period: 40s
+    depends_on:
+      ssc:
+        condition: service_healthy
     networks:
       - ftfydemo_net
   
   scancentral-sast-sensor:
-    image: fortifydocker/scancentral-sast-sensor:${SCANCENTRAL_SAST_SENSOR_VERSION}
-    container_name: "scancentral-sast-sensor"
+    image: "fortifydocker/scancentral-sast-sensor:${SCANCENTRAL_SAST_SENSOR_VERSION:-26.3.0}"
+    profiles:
+      - scsast
     restart: always
     depends_on:
       scancentral-sast-controller:
@@ -35,13 +45,17 @@ services:
     volumes:
       - ftfydata_scsast_sensor:/fortify
       - type: bind
-        source: ../ssc/fortify.license
+        source: ../fortify.license
         target: /app/sca/fortify.license
+        read_only: true
+      - ./secrets:/run/secrets:ro
     environment:
       - SCANCENTRAL_ENABLE=1
-      - SCANCENTRAL_URL=http://scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_PORT_INTERNAL}/scancentral-ctrl
-      - SCANCENTRAL_WORKER_AUTH_TOKEN=FortifyDemo
-      - FORTIFY_UPDATE_URL=http://ssc-demo-webapp:${SSC_PORT_INTERNAL}
+      - SCANCENTRAL_URL=https://scancentral-sast-controller:8443/scancentral-ctrl/
+      - SCANCENTRAL_WORKER_AUTH_TOKEN_FILE=/run/secrets/worker-auth-token
+      - SCANCENTRAL_TRUSTSTORE_PATH=/run/secrets/sensor-truststore.jks
+      - SCANCENTRAL_TRUSTSTORE_PASSWORD_FILE=/run/secrets/sensor-truststore-password
+      - FORTIFY_UPDATE_SERVER=https://${SSC_HOSTNAME:-ssc.onfortify.com}/
       - FORTIFY_UPDATE_AUTO=1
       - FORTIFY_UPDATE_ACCEPT_KEY=1
     networks:
