@@ -1,0 +1,35 @@
+services:
+  traefik:
+    volumes:
+      - ./traefik/dynamic_tls.local.yml:/etc/traefik/dynamic/dynamic_tls.yml:ro
+    networks:
+      ftfydemo_net:
+        aliases:
+          - ${LIM_HOSTNAME:-lim.ftfydemo.localhost}
+          - ${SSC_HOSTNAME:-ssc.ftfydemo.localhost}
+          - ${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.ftfydemo.localhost}
+          - ${SCANCENTRAL_DAST_API_HOSTNAME:-scancentral-dast-api.ftfydemo.localhost}
+
+  lim:
+    labels:
+      - traefik.http.routers.lim-ftfydemo.rule=Host(`${LIM_HOSTNAME:-lim.ftfydemo.localhost}`)
+      - traefik.http.routers.lim-ftfydemo.tls.certresolver=
+
+  ssc:
+    labels:
+      - traefik.http.routers.ssc-ftfydemo.rule=Host(`${SSC_HOSTNAME:-ssc.ftfydemo.localhost}`)
+      - traefik.http.routers.ssc-ftfydemo.tls.certresolver=
+
+  scancentral-sast-controller:
+    labels:
+      - traefik.http.routers.scancentral-sast-controller.rule=Host(`${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.ftfydemo.localhost}`)
+      - traefik.http.routers.scancentral-sast-controller.tls.certresolver=
+
+  scancentral-dast-api:
+    labels:
+      - traefik.http.routers.scancentral-dast-api.rule=Host(`${SCANCENTRAL_DAST_API_HOSTNAME:-scancentral-dast-api.ftfydemo.localhost}`)
+      - traefik.http.routers.scancentral-dast-api.tls.certresolver=
+
+networks:
+  ftfydemo_net:
+    external: true

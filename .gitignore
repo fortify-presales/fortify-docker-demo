@@ -7,4 +7,8 @@ files/sonatype.license
 **/*.log
 certs
 demo.credentials
+demo.local.env
 .fortify
+postgres/secrets/
+scdast/generated/
+scdast/secrets/

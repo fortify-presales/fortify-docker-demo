@@ -1,0 +1,4 @@
+tls:
+  certificates:
+    - certFile: /certs/ftfydemo.localhost.pem
+      keyFile: /certs/ftfydemo.localhost-key.pem

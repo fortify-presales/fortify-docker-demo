@@ -6,6 +6,7 @@ services:
       - default
       - ssc
       - scsast
+      - scdast
     environment: &env
       HTTP_SERVER_CERTIFICATE_PASSWORD: 'passw0rd1'
       HTTP_SERVER_CERTIFICATE_KEYSTORE_FILE: "/fortify/secrets/keystore"
@@ -67,6 +68,7 @@ services:
       - default
       - ssc
       - scsast
+      - scdast
     labels:
       - traefik.enable=false
     # Not exposing ports here - using internal network only
@@ -99,6 +101,7 @@ services:
       - default
       - ssc
       - scsast
+      - scdast
     mem_limit: 4G
     environment:
       <<: *env
@@ -113,6 +116,12 @@ services:
       - traefik.http.routers.ssc-ftfydemo.tls.certresolver=le
       - traefik.http.services.ssc-ftfydemo.loadbalancer.server.port=8080
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
     # Not exposing ports here - using Traefik to route instead
     #ports:
     #  - "${SSC_HTTPS_PORT-8443}:8443/tcp"

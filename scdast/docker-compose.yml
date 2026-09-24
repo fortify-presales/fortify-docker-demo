@@ -1,0 +1,245 @@
+x-scdast-service: &scdast-service
+  profiles:
+    - scdast
+  restart: unless-stopped
+  networks:
+    - ftfydemo_net
+
+services:
+  scdast-datastore-core:
+    image: "postgres:${POSTGRES_VERSION:-17.5}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/core-runtime.env
+        required: false
+    volumes:
+      - ftfydata_scdast_core_datastore:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    labels:
+      - traefik.enable=false
+
+  scdast-wise-core:
+    image: "fortifydocker/wise:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    labels:
+      - traefik.enable=false
+
+  scdast-scanner-core:
+    image: "fortifydocker/dast-scanner:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/core-runtime.env
+        required: false
+    depends_on:
+      scdast-datastore-core:
+        condition: service_healthy
+      scdast-wise-core:
+        condition: service_started
+    volumes:
+      - ftfydata_scdast_core_scans:/etc/wi/.widata/user/ScanData
+    environment:
+      WI_ENABLE_JSON_SCAN_SETTINGS: "true"
+      WI_MODE: "2"
+      WI_API_HOST: +
+      WI_API_PORT: "8089"
+      WI_API_AUTH: None
+      WI_WISE: ws://scdast-wise-core:9442
+      FORTIFY_2FA_REMOTE_ADDR: ""
+      FORTIFY_2FA_MASTER_TOKEN: ""
+      LIM: ""
+      LIM_POOL_NAME: ""
+      LIM_POOL_PSWD: ""
+      WI_API_TLS_ENABLED: "true"
+    labels:
+      - traefik.enable=false
+
+  scancentral-dast-api:
+    image: "fortifydocker/scancentral-dast-api:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/runtime.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:64814
+      CustomHeaders__0__HeaderName: x-frame-options
+      CustomHeaders__0__HeaderValue: SAMEORIGIN
+      CustomHeaders__1__HeaderName: content-security-policy
+      CustomHeaders__1__HeaderValue: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.scancentral-dast-api.rule=Host(`${SCANCENTRAL_DAST_API_HOSTNAME:-scancentral-dast-api.onfortify.com}`)
+      - traefik.http.routers.scancentral-dast-api.entrypoints=websecure
+      - traefik.http.routers.scancentral-dast-api.tls=true
+      - traefik.http.routers.scancentral-dast-api.tls.certresolver=le
+      - traefik.http.services.scancentral-dast-api.loadbalancer.server.port=64814
+    healthcheck:
+      test: ["CMD-SHELL", "code=$$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:64814/); [ \"$$code\" -ge 200 ] && [ \"$$code\" -lt 500 ]"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  scancentral-dast-globalservice:
+    image: "fortifydocker/scancentral-dast-globalservice:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/runtime.env
+        required: false
+    depends_on:
+      scancentral-dast-api:
+        condition: service_healthy
+    labels:
+      - traefik.enable=false
+
+  scancentral-dast-utilityservice:
+    image: "fortifydocker/scancentral-dast-utilityservice:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/runtime.env
+        required: false
+    depends_on:
+      scancentral-dast-api:
+        condition: service_healthy
+      scdast-scanner-core:
+        condition: service_started
+    environment:
+      Kestrel__Endpoints__Http2__Url: http://0.0.0.0:5000
+      Kestrel__Endpoints__Http2__Protocols: Http2
+      WebInspectRestApiRootUrl: https://scdast-scanner-core:8089
+      WebInspectRestApiAuthenticationType: None
+      WebInspectRestApiUserName: ""
+      WebInspectRestApiPassword: ""
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--show-error", "--http2-prior-knowledge", "--output", "/dev/null", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    labels:
+      - traefik.enable=false
+
+  scdast-datastore:
+    image: "postgres:${POSTGRES_VERSION:-17.5}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/scanner-runtime.env
+        required: false
+    volumes:
+      - ftfydata_scdast_scanner_datastore:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    labels:
+      - traefik.enable=false
+
+  scdast-wise:
+    image: "fortifydocker/wise:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    labels:
+      - traefik.enable=false
+
+  scdast-twofa:
+    image: "fortifydocker/fortify-2fa:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/twofa-runtime.env
+        required: false
+    labels:
+      - traefik.enable=false
+
+  scdast-scanner:
+    image: "fortifydocker/dast-scanner:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    depends_on:
+      scdast-datastore:
+        condition: service_healthy
+      scdast-wise:
+        condition: service_started
+      scdast-twofa:
+        condition: service_started
+    volumes:
+      - ftfydata_scdast_scanner_scans:/etc/wi/.widata/user/ScanData
+    env_file:
+      - path: ./generated/twofa-runtime.env
+        required: false
+      - path: ./generated/scanner-runtime.env
+        required: false
+    environment:
+      WI_ENABLE_JSON_SCAN_SETTINGS: "true"
+      WI_MODE: "2"
+      WI_API_HOST: +
+      WI_API_PORT: "8089"
+      WI_API_AUTH: None
+      WI_WISE: ws://scdast-wise:9442
+      FORTIFY_2FA_REMOTE_ADDR: scdast-twofa
+      LIM: ""
+      LIM_POOL_NAME: ""
+      LIM_POOL_PSWD: ""
+      WI_API_TLS_ENABLED: "true"
+    labels:
+      - traefik.enable=false
+
+  scancentral-dast-scannerservice:
+    image: "fortifydocker/scancentral-dast-scannerservice:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/scanner-service-runtime.env
+        required: false
+    depends_on:
+      scancentral-dast-api:
+        condition: service_healthy
+      scancentral-dast-globalservice:
+        condition: service_started
+      scdast-scanner:
+        condition: service_started
+    environment:
+      SCDASTApiRootUrl: http://scancentral-dast-api:64814
+      AllowNonTrustedServerCertificate: "true"
+      ScannerDescription: Docker demo Linux scanner
+      ScannerType: Fixed
+      WebInspectRestApiRootUrl: https://scdast-scanner:8089
+      WebInspectRestApiAuthenticationType: None
+      WebInspectRestApiUserName: ""
+      WebInspectRestApiPassword: ""
+      ProxySettings__UseProxy: "false"
+      ProxySettings__ProxyAddress: ""
+      ProxySettings__ProxyPassword: ""
+      ProxySettings__ProxyUserName: ""
+      ProxySettings__ProxyBypassList: ""
+      ProxySettings__BypassOnLocal: "true"
+    labels:
+      - traefik.enable=false
+
+  scancentral-dast-fortifyconnect:
+    image: "fortifydocker/scancentral-dast-fortifyconnect:${SCDAST_DOCKER_VERSION:-26.2.ubi.9}"
+    <<: *scdast-service
+    env_file:
+      - path: ./generated/fortifyconnect-runtime.env
+        required: false
+    ports:
+      - "${SCANCENTRAL_DAST_FORTIFYCONNECT_PORT:-2022}:2022"
+    environment:
+      Port: "2022"
+    labels:
+      - traefik.enable=false
+
+networks:
+  ftfydemo_net:
+    external: true
+
+volumes:
+  ftfydata_scdast_core_datastore:
+  ftfydata_scdast_core_scans:
+  ftfydata_scdast_scanner_datastore:
+  ftfydata_scdast_scanner_scans:

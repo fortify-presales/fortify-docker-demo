@@ -2,6 +2,8 @@
 include:
   - lim/docker-compose.yml
   - ssc/docker-compose.yaml
+  - postgres/docker-compose.yml
+  - scdast/docker-compose.yml
   #- nexus/docker-compose.yaml
   - scsast/docker-compose.yml
   #- jenkins/docker-compose.yaml
@@ -13,6 +15,7 @@ services:
     profiles:
     - default
     - traefik
+    - scdast
     command:
     - --api.dashboard=true
     - --api.insecure=true

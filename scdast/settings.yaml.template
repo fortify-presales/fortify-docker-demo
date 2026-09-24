@@ -1,0 +1,66 @@
+databaseSettings:
+  databaseProvider: PostgreSQL
+  server: postgres
+  database: ${SCDAST_DATABASE_NAME}
+  commandTimeout: 600
+  dboLevelDatabaseAccount:
+    username: postgres
+    password: ${POSTGRES_ADMIN_PASSWORD}
+  standardDatabaseAccount:
+    username: ${SCDAST_DATABASE_USER}
+    password: ${SCDAST_DATABASE_PASSWORD}
+    createLogin: true
+
+retainCompletedScans: true
+disableAdvancedScanPrioritization: false
+enableRestrictedScanSettings: false
+serviceToken: ${SCDAST_SERVICE_TOKEN}
+
+smartUpdateSettings:
+  smartUpdateUrl: https://smartupdate.fortify.microfocus.com/
+  licensingUrl: https://licenseservice.fortify.microfocus.com/
+
+sSCSettings:
+  sSCRootUrl: https://${SSC_HOSTNAME}
+  serviceAccountUserName: ${SSC_DAST_USERNAME}
+  serviceAccountPassword: ${SSC_DAST_PASSWORD}
+
+sCDASTApiSettings:
+  rootUrl: http://scancentral-dast-api:64814
+  disableCorsOrigins: false
+  corsOrigins:
+    - https://${SSC_HOSTNAME}
+    - https://${SCANCENTRAL_DAST_API_HOSTNAME}
+
+lIMSettings:
+  limUrl: http://lim
+  serviceAccountUserName: ${LIM_USERNAME}
+  serviceAccountPassword: ${LIM_SERVICE_PASSWORD}
+  defaultLimPoolName: ${LIM_POOL_NAME}
+  defaultLimPoolPassword: ${LIM_POOL_PASSWORD}
+
+utilityWorkerServiceSettings:
+  rootUrl: http://scancentral-dast-utilityservice:5000
+
+environmentSettings:
+  allowNonTrustedServerCertificate: true
+  proxySettings:
+    useProxy: false
+    proxyAddress: ""
+    proxyPassword: ""
+    proxyUserName: ""
+    proxyBypassList: scancentral-dast-api;scancentral-dast-utilityservice;lim;ssc
+
+applySecureBase: false
+
+debrickedSettings:
+  accessToken: ""
+
+fortifyConnectServerSettings:
+  disableFortifyConnectServer: false
+  internalHost: scancentral-dast-fortifyconnect
+  internalPort: 2022
+  externalHost: ${SCANCENTRAL_DAST_FORTIFYCONNECT_HOSTNAME}
+  externalPort: ${SCANCENTRAL_DAST_FORTIFYCONNECT_PORT}
+  privateKeyContents: ${FORTIFYCONNECT_PRIVATE_KEY_CONTENTS}
+  publicKeyContents: ${FORTIFYCONNECT_PUBLIC_KEY_CONTENTS}

@@ -56,7 +56,7 @@ services:
       - SCANCENTRAL_WORKER_AUTH_TOKEN_FILE=/run/secrets/worker-auth-token
       - SCANCENTRAL_TRUSTSTORE_PATH=/run/secrets/sensor-truststore.jks
       - SCANCENTRAL_TRUSTSTORE_PASSWORD_FILE=/run/secrets/sensor-truststore-password
-      - FORTIFY_UPDATE_SERVER=https://${SSC_HOSTNAME:-ssc.onfortify.com}/
+      - FORTIFY_UPDATE_SERVER=https://update.fortify.com
       - FORTIFY_UPDATE_AUTO=1
       - FORTIFY_UPDATE_ACCEPT_KEY=1
     networks:
