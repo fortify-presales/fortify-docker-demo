@@ -122,6 +122,25 @@ docker compose --env-file demo.env ps
 docker compose --env-file demo.env logs -f lim
 ```
 
+#### Recover after an AWS EC2 stop/start
+
+After the instance is running and SSH is available, rerun Compose so services start in dependency order. Start the base
+stack and SAST profile with:
+
+```bash
+docker compose --env-file demo.env --profile default --profile scsast up -d
+```
+
+If ScanCentral DAST was initialized, start it with `./scdast/manage.sh up`. Check `docker compose --env-file demo.env ps`
+and wait for services with healthchecks to report `healthy` before troubleshooting application access. Docker's
+automatic restart policies do not enforce Compose dependency ordering during an EC2 boot.
+
+An EC2 stop/start can assign a different public IPv4 address unless the instance uses an Elastic IP. Update the DNS A
+records for `SSC_HOSTNAME`, `SCANCENTRAL_SAST_CONTROLLER_HOSTNAME`, and `SCANCENTRAL_DAST_API_HOSTNAME` (when set) to
+the instance's current public IP, then confirm they resolve correctly. Ensure the EC2 security group allows inbound
+TCP 443. Do not use `docker compose down -v` for routine recovery; it removes named volumes containing persistent
+application and database data.
+
 ### 5. Start ScanCentral SAST
 
 The ScanCentral SAST profile starts SSC, the ScanCentral SAST Controller, and a Linux sensor:

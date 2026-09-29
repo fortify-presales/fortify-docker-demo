@@ -4,6 +4,12 @@ services:
     image: "fortifydocker/scancentral-sast-controller:${SCANCENTRAL_SAST_CONTROLLER_VERSION:-26.2.1}"
     profiles:
       - scsast
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - rm -f /app/etc/server.xml; exec /bin/bash -- /entrypoint.sh "$@"
+      - --
+    command: ["run"]
     restart: always
     labels:
       - traefik.enable=true
