@@ -1,25 +1,17 @@
-FROM openjdk:11-jdk-slim
+FROM eclipse-temurin:17-jre-jammy
 
-LABEL maintainer="klee2@opentext.com"
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& groupadd --gid 1000 integration \
+	&& useradd --uid 1000 --gid integration --no-create-home integration \
+	&& mkdir -p /var/nexus-iq-integration-service \
+	&& chown integration:integration /var/nexus-iq-integration-service
 
-USER root
-
-# Add docker-compose-wait tool -------------------
-ENV WAIT_VERSION 2.7.2
-ADD https://github.com/ufoscout/docker-compose-wait/releases/download/$WAIT_VERSION/wait /wait
-RUN chmod +x /wait
-
-# Create app directory
 WORKDIR /app
+COPY files/SonatypeFortifyIntegration-6.0.1.jar ./integration.jar
+COPY files/start.sh files/iqapplication.properties files/mapping.json ./
+RUN chmod 755 start.sh
 
-# Copy the files to the container
-ADD files ./
-
-# Make port 8182 available to the world outside this container
+USER integration
 EXPOSE 8182
-
-# JAVA_OPTS to be passed in
-#ENV JAVA_OPTS="-Xmx512m -Xss256k"
-
-# Run the jar file
 ENTRYPOINT ["./start.sh"]

@@ -4,7 +4,7 @@ include:
   - ssc/docker-compose.yaml
   - postgres/docker-compose.yml
   - scdast/docker-compose.yml
-  #- nexus/docker-compose.yaml
+  - nexus/docker-compose.yaml
   - scsast/docker-compose.yml
   #- jenkins/docker-compose.yaml
   #- jira/docker-compose.yaml
@@ -16,6 +16,8 @@ services:
     - default
     - traefik
     - scdast
+    - sonatype
+    - sonatype-integration
     command:
     - --api.dashboard=true
     - --api.insecure=true

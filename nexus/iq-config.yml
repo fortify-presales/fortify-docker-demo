@@ -1,0 +1,29 @@
+sonatypeWork: /sonatype-work
+licenseFile: /run/secrets/sonatype-license.lic
+database:
+  type: postgresql
+  hostname: postgres
+  port: 5432
+  name: iqserver
+  username: iq
+  password: '${DATABASE_PASSWORD}'
+  parameters:
+    tcpKeepAlive: true
+    socketTimeout: 30
+server:
+  applicationConnectors:
+    - type: http
+      port: 8070
+  adminConnectors:
+    - type: http
+      port: 8071
+      bindHost: 127.0.0.1
+logging:
+  level: INFO
+  appenders:
+    - type: console
+    - type: file
+      currentLogFilename: /var/log/nexus-iq-server/clm-server.log
+      archivedLogFilenamePattern: /var/log/nexus-iq-server/clm-server-%d.log.gz
+      archivedFileCount: 5
+createSampleData: true

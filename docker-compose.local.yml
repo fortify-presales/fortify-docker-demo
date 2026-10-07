@@ -9,6 +9,9 @@ services:
           - ${SSC_HOSTNAME:-ssc.ftfydemo.localhost}
           - ${SCANCENTRAL_SAST_CONTROLLER_HOSTNAME:-scancentral-sast-controller.ftfydemo.localhost}
           - ${SCANCENTRAL_DAST_API_HOSTNAME:-scancentral-dast-api.ftfydemo.localhost}
+          - ${NEXUS_REPO_HOSTNAME:-repo.ftfydemo.localhost}
+          - ${NEXUS_IQ_HOSTNAME:-lifecycle.ftfydemo.localhost}
+          - ${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.ftfydemo.localhost}
 
   lim:
     labels:
@@ -29,6 +32,21 @@ services:
     labels:
       - traefik.http.routers.scancentral-dast-api.rule=Host(`${SCANCENTRAL_DAST_API_HOSTNAME:-scancentral-dast-api.ftfydemo.localhost}`)
       - traefik.http.routers.scancentral-dast-api.tls.certresolver=
+
+  nexus-repo:
+    labels:
+      - traefik.http.routers.nexus-repo.rule=Host(`${NEXUS_REPO_HOSTNAME:-repo.ftfydemo.localhost}`)
+      - traefik.http.routers.nexus-repo.tls.certresolver=
+
+  nexus-iq-server:
+    labels:
+      - traefik.http.routers.nexus-iq.rule=Host(`${NEXUS_IQ_HOSTNAME:-lifecycle.ftfydemo.localhost}`)
+      - traefik.http.routers.nexus-iq.tls.certresolver=
+
+  nexus-iq-integration-service:
+    labels:
+      - traefik.http.routers.nexus-iq-integration.rule=Host(`${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.ftfydemo.localhost}`) && Path(`/iqWebhook`) && Method(`POST`)
+      - traefik.http.routers.nexus-iq-integration.tls.certresolver=
 
 networks:
   ftfydemo_net:

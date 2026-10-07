@@ -1,35 +1,14 @@
 [
     {
-      "sonatypeProject": "juice-shop",
-      "sonatypeProjectStage": "build",
-      "fortifyApplication": "JuiceShop [BT]",
-      "fortifyApplicationVersion": "master",
-      "overwrite": true
+      "sonatypeProject": "nodegoat",
+      "sonatypeProjectStage": "release",
+      "fortifyApplication": "sonatype-demo/NodeGoat",
+      "fortifyApplicationVersion": "Release v1.4"
     },
     {
-      "sonatypeProject": "juice-shop",
-      "sonatypeProjectStage": "stage-release",
-      "fortifyApplication": "JuiceShop [BT]",
-      "fortifyApplicationVersion": "stage-release",
-      "overwrite": true
-    },
-    {
-      "sonatypeProject": "terragoat",
+      "sonatypeProject": "nodegoat",
       "sonatypeProjectStage": "build",
-      "fortifyApplication": "TerraGoat [BT]",
-      "fortifyApplicationVersion": "master",
-    {
-      "sonatypeProject": "insecurewebapp",
-      "sonatypeProjectStage": "build",
-      "fortifyApplication": "InsecureWebApp [KAL]",
-      "fortifyApplicationVersion": "main",
-      "overwrite": true
-    },
-    {
-      "sonatypeProject": "insecurerestapi",
-      "sonatypeProjectStage": "build",
-      "fortifyApplication": "InsecureRestAPI [KAL]",
-      "fortifyApplicationVersion": "main",
-      "overwrite": true
+      "fortifyApplication": "sonatype-demo/NodeGoat",
+      "fortifyApplicationVersion": "master"
     }
 ]

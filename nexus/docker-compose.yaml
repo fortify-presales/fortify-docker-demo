@@ -1,61 +1,145 @@
 services:
-
   nexus-repo:
-    image: sonatype/nexus3:${NEXUS_REPO_VERSION}
-    container_name: "nexus-repo"
-    restart: always
-    ports: 
-      - "${NEXUS_REPO_PORT}:8081"
+    image: sonatype/nexus3:${NEXUS_REPO_VERSION:-3.96.4-ubi}
+    profiles: [sonatype, sonatype-integration]
+    restart: unless-stopped
+    stop_grace_period: 120s
+    environment:
+      INSTALL4J_ADD_VM_PARAMS: ${NEXUS_REPO_JAVA_OPTS:--Xms2703m -Xmx2703m -XX:MaxDirectMemorySize=2703m -Djava.util.prefs.userRoot=/nexus-data/javaprefs}
     volumes:
       - ftfydata_nexus_repo:/nexus-data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.nexus-repo.rule=Host(`${NEXUS_REPO_HOSTNAME:-repo.onfortify.com}`)
+      - traefik.http.routers.nexus-repo.entrypoints=websecure
+      - traefik.http.routers.nexus-repo.tls=true
+      - traefik.http.routers.nexus-repo.tls.certresolver=le
+      - traefik.http.services.nexus-repo.loadbalancer.server.port=8081
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_REPO_PORT}"]
-      interval: 90s
+      test: [CMD, curl, --fail, --silent, http://localhost:8081/]
+      interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s      
-    networks:
-      - ftfydemo_net
+      retries: 20
+      start_period: 120s
+    networks: [ftfydemo_net]
+
+  nexus-init:
+    image: postgres:${POSTGRES_VERSION:-17.5}
+    profiles: [sonatype, sonatype-integration]
+    restart: "no"
+    entrypoint: [sh, /app/init-db.sh]
+    labels:
+      - traefik.enable=false
+    volumes:
+      - ./init-db.sh:/app/init-db.sh:ro
+      - type: bind
+        source: ../postgres/secrets/postgres-admin-password
+        target: /run/secrets/postgres-admin-password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./secrets/database-password
+        target: /run/secrets/database-password
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [ftfydemo_net]
 
   nexus-iq-server:
-    image: sonatype/nexus-iq-server:${NEXUS_IQ_SERVER_VERSION}
-    container_name: "nexus-iq-server"
-    restart: always
-    ports: 
-      - "${NEXUS_IQ_SERVER_WEB_PORT}:8070"
-      - "${NEXUS_IQ_SERVER_ADMIN_PORT}:8071"
+    image: sonatype/nexus-iq-server:${NEXUS_IQ_SERVER_VERSION:-1.207.1}
+    profiles: [sonatype, sonatype-integration]
+    restart: unless-stopped
+    stop_grace_period: 120s
+    entrypoint: [sh, /app/start-iq.sh]
+    environment:
+      JAVA_OPTS: ${NEXUS_IQ_JAVA_OPTS:--Xms2g -Xmx4g -Djava.util.prefs.userRoot=/sonatype-work/javaprefs}
     volumes:
       - ftfydata_sonatype-work:/sonatype-work
       - ftfydata_sonatype-logs:/var/log/nexus-iq-server
+      - ./start-iq.sh:/app/start-iq.sh:ro
+      - ./iq-config.yml:/etc/nexus-iq-server/config.yml:ro
+      - type: bind
+        source: ./secrets/database-password
+        target: /run/secrets/database-password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../sonatype-license.lic
+        target: /run/secrets/sonatype-license.lic
+        read_only: true
+        bind:
+          create_host_path: false
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.nexus-iq.rule=Host(`${NEXUS_IQ_HOSTNAME:-lifecycle.onfortify.com}`)
+      - traefik.http.routers.nexus-iq.entrypoints=websecure
+      - traefik.http.routers.nexus-iq.tls=true
+      - traefik.http.routers.nexus-iq.tls.certresolver=le
+      - traefik.http.services.nexus-iq.loadbalancer.server.port=8070
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_IQ_SERVER_WEB_PORT}"]
-      interval: 90s
+      test: [CMD, curl, --fail, --silent, http://localhost:8071/healthcheck]
+      interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s      
-    networks:
-      - ftfydemo_net
+      retries: 20
+      start_period: 120s
+    depends_on:
+      nexus-init:
+        condition: service_completed_successfully
+    networks: [ftfydemo_net]
 
   nexus-iq-integration-service:
-    image: nexus-iq-integration-service:latest
+    image: nexus-iq-integration-service:6.0.1
     build: ./nexus-iq-integration-service
-    container_name: "nexus-iq-integration-service"
-    restart: always
-    depends_on:
-      nexus-iq-server:
-        condition: service_healthy  
-    ports: 
-      - "${NEXUS_IQ_SERVER_INTEGRATION_PORT}:8182"
+    profiles: [sonatype-integration]
+    restart: unless-stopped
+    environment:
+      IQSERVER_URL: http://nexus-iq-server:8070
+      IQSERVER_USERNAME: ${NEXUS_IQ_USERNAME:-admin}
+      SSCSERVER_URL: http://ssc:8080${SSC_URL_PREFIX:-/}
+      SCHEDULING_FIXED_RATE_MINUTES: ${SONATYPE_POLL_INTERVAL_MINUTES:-15}
+      JAVA_TOOL_OPTIONS: -Xmx512m
     volumes:
       - ftfydata_sonatype-integration:/var/nexus-iq-integration-service
+      - ./nexus-iq-integration-service/files/iqapplication.properties:/app/iqapplication.properties:ro
+      - ./nexus-iq-integration-service/files/mapping.json:/app/mapping.json:ro
+      - type: bind
+        source: ./secrets/iq-password
+        target: /run/secrets/iq-password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./secrets/ssc-token
+        target: /run/secrets/ssc-token
+        read_only: true
+        bind:
+          create_host_path: false
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.nexus-iq-integration.rule=Host(`${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.onfortify.com}`) && Path(`/iqWebhook`) && Method(`POST`)
+      - traefik.http.routers.nexus-iq-integration.entrypoints=websecure
+      - traefik.http.routers.nexus-iq-integration.tls=true
+      - traefik.http.routers.nexus-iq-integration.tls.certresolver=le
+      - traefik.http.routers.nexus-iq-integration.middlewares=nexus-iq-webhook-allowlist
+      - traefik.http.middlewares.nexus-iq-webhook-allowlist.ipallowlist.sourcerange=${SONATYPE_WEBHOOK_ALLOWED_CIDRS:-127.0.0.1/32}
+      - traefik.http.services.nexus-iq-integration.loadbalancer.server.port=8182
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${NEXUS_IQ_SERVER_INTEGRATION_PORT}"]
-      interval: 90s
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/8182"]
+      interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s      
-    networks:
-      - ftfydemo_net
+      retries: 10
+      start_period: 60s
+    depends_on:
+      nexus-iq-server:
+        condition: service_healthy
+      ssc:
+        condition: service_healthy
+    networks: [ftfydemo_net]
 
 networks:
   ftfydemo_net:

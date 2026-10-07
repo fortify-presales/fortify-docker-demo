@@ -25,8 +25,8 @@ If using ScanCentral DAST, you will also need ScanCentral DAST and ScanCentral D
 
 ### Sonatype Nexus IQ Server license
 
-A working **sonatype.license** file for Sonatype Nexus IQ Server.
-Place this file in the "files" directory of the project.
+A working **sonatype-license.lic** file for Sonatype Nexus IQ Server.
+Place this file at the repository root.
 
 ## Environment preparation
 
@@ -96,7 +96,7 @@ hosts-file changes. Containers resolve the same names to Traefik through aliases
 ### 3. Start the stack
 
 ```bash
-# Start everything in the "default" profile (traefik, lim, ssc, jenkins, jira, nexus, scancentral-sast, ...)
+# Start the base "default" profile (traefik, lim, ssc)
 docker compose --env-file demo.env --profile default up -d
 
 # Or start only specific profiles, e.g. traefik + lim + ssc
@@ -342,7 +342,106 @@ This single-host deployment terminates public TLS at Traefik and uses HTTP betwe
 Production deployments should follow OpenText guidance for end-to-end TLS, component separation, backups, and external
 secret management.
 
-### 7. Stop / clean up
+### 7. Start Sonatype Repository and Lifecycle
+
+The optional `sonatype` profile adds Nexus Repository and Lifecycle (IQ Server). The `sonatype-integration` profile
+also enables the locally built SSC integration service and its SSC dependencies. The supplied integration JAR 6.0.1
+requires Java 17; the container runs with a maintained Temurin JRE as UID 1000.
+
+Point `repo.onfortify.com`, `lifecycle.onfortify.com`, and `lifecycle2ssc.onfortify.com` at this host. These names are
+configurable in `demo.env`. Traefik provides HTTPS on port 443; application, PostgreSQL, and IQ admin ports are not
+published. Run:
+
+```bash
+./nexus/start.sh
+# Local environment: run scripts/setup-local.sh first, then:
+./nexus/start.sh --local
+```
+
+The script generates missing PostgreSQL/IQ database secrets, preserves existing credentials, creates only the
+`iqserver` database and `iq` role, and leaves running shared services intact. It does not reset the DAST database.
+Runtime IQ credentials and license files must be readable by UID 1000; keep `nexus/secrets/*` owned by that UID with
+mode 600. Keep the secret files with database backups: regenerating them against an existing volume is not a reset.
+
+The root `sonatype-license.lic` is mounted read-only and installed automatically when IQ is unlicensed. Check its
+activation and expiry in Lifecycle; Repository Pro entitlement is separate and is not assumed. Repository uses its
+own embedded database in the persistent `/nexus-data` volume.
+
+- Repository: `https://repo.onfortify.com/`. On first sign-in, Repository prompts for the `admin` password stored
+	inside the `nexus-repo` container at `/nexus-data/admin.password`. Retrieve it privately with
+	`docker compose --env-file demo.env exec nexus-repo cat /nexus-data/admin.password`.
+- Lifecycle: `https://lifecycle.onfortify.com/`. Default admin username is `admin` and default password is `admin123`.
+	Change the password after your first login.
+
+Change both initial passwords immediately, before public testing. In Lifecycle System Preferences, set the base URL
+to `https://lifecycle.onfortify.com`. IQ needs outbound HTTPS to `clm.sonatype.com`. The pinned IQ release supports
+PostgreSQL 14 and newer; the demo uses the existing 17.5 cluster. This single-host resource configuration is for
+evaluation, not production sizing. Confirm free disk space and back up volumes before upgrades.
+
+#### Configure SSC integration
+
+Verify that the installed Sonatype SSC parser is enabled and compatible with this integration and SSC version. The
+parser is a separate JAR from the integration service; the supplied metadata rulepack is not a substitute for it.
+
+Create an SSC `CIToken` for an account with universal permission to upload analysis results, view application
+versions, comment on issues, and suppress/unsuppress issues. Using a local editor, put the token in the ignored
+`nexus/secrets/ssc-token` file, with mode 600 and ownership UID 1000. Do not put the token in `demo.env` or git.
+
+Put the current IQ password in `nexus/secrets/iq-password` with the same ownership/permissions. Set `NEXUS_IQ_USERNAME`
+to match the account. If the password file is absent, the start script creates the bootstrap `admin123` value; replace
+it after rotating IQ credentials. Both secrets must be non-empty before integration can start.
+
+Edit `nexus/nexus-iq-integration-service/files/mapping.json` to match real IQ application public IDs, evaluated stages,
+and existing SSC application versions. The supplied entries are examples, not automatically created projects.
+Configuration and mappings are mounted read-only. Integration work files and logs persist in a named volume.
+
+```bash
+./nexus/start.sh --integration
+# Or for local testing:
+./nexus/start.sh --local --integration
+docker compose --env-file demo.env logs --tail 100 nexus-iq-integration-service
+```
+
+The integration uses `http://nexus-iq-server:8070` and `http://ssc:8080/` internally, respecting `SSC_URL_PREFIX` when
+configured. It polls every 15 minutes by default (`SONATYPE_POLL_INTERVAL_MINUTES`) and also accepts webhooks. A missing
+token deliberately blocks integration startup without preventing Repository/Lifecycle from being used.
+
+#### Configure the protected webhook
+
+Only `POST https://lifecycle2ssc.onfortify.com/iqWebhook` is exposed. Other paths, including synchronization commands,
+are not routed. `SONATYPE_WEBHOOK_ALLOWED_CIDRS` defaults to loopback only, blocking external requests. Replace it with
+the comma-separated IQ egress and trusted tester CIDRs, then rerun the integration startup script. Check the actual
+source address seen by Traefik; Docker NAT can differ from the container address. Do not allow the entire Docker
+network or `0.0.0.0/0`. TLS alone does not authenticate webhook callers; the IP allowlist is required.
+
+In Lifecycle **System Preferences > Webhooks**, add the URL above and select **Application Evaluation**. For an
+internal-only callback, IQ can instead use `http://nexus-iq-integration-service:8182/iqWebhook`; this bypasses the public
+proxy allowlist and relies on the trusted Docker network. Local mkcert testing also needs its CA trusted by IQ if
+using the public HTTPS callback; the internal URL avoids that requirement.
+
+Re-evaluate one mapped application, check receipt in the integration logs, and confirm its findings arrive in SSC.
+Verify that an unlisted external source receives 403 and `/startScanLoad` is not exposed. Polling and webhook tests
+need a valid SSC token, IQ credentials, existing mappings, and the enabled parser; a healthy HTTP listener alone
+does not demonstrate successful synchronization.
+
+Stop only Sonatype-owned services without removing data or stopping SSC, DAST, PostgreSQL, or Traefik:
+
+```bash
+./nexus/stop.sh
+# Local:
+./nexus/stop.sh --local
+```
+
+For direct Compose use, prepare the secrets first and use `--profile sonatype` or `--profile sonatype-integration`.
+The initializer also runs as a dependency of IQ in direct Compose startup. Never use `down -v` for routine recovery.
+If a public image pull fails because of saved Docker credentials, refresh them with `docker login`; do not commit
+registry credentials to the repository.
+
+Reference: [IQ database configuration](https://help.sonatype.com/en/external-database-configuration.html),
+[IQ configuration](https://help.sonatype.com/en/config-yaml.html), and
+[Sonatype for Fortify SSC](https://help.sonatype.com/en/sonatype-fortify-ssc.html).
+
+### 8. Stop / clean up
 
 ```bash
 # Stop and remove containers

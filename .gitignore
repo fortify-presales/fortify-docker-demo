@@ -12,3 +12,5 @@ demo.local.env
 postgres/secrets/
 scdast/generated/
 scdast/secrets/
+sonatype-license.lic
+nexus/secrets/

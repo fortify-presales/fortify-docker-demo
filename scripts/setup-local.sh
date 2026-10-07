@@ -26,7 +26,10 @@ mkcert \
   "$LIM_HOSTNAME" \
   "$SSC_HOSTNAME" \
   "$SCANCENTRAL_SAST_CONTROLLER_HOSTNAME" \
-  "$SCANCENTRAL_DAST_API_HOSTNAME"
+  "$SCANCENTRAL_DAST_API_HOSTNAME" \
+  "${NEXUS_REPO_HOSTNAME:-repo.ftfydemo.localhost}" \
+  "${NEXUS_IQ_HOSTNAME:-lifecycle.ftfydemo.localhost}" \
+  "${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.ftfydemo.localhost}"
 
 docker network inspect ftfydemo_net >/dev/null 2>&1 || docker network create ftfydemo_net >/dev/null
 

@@ -3,6 +3,8 @@ services:
     image: "postgres:${POSTGRES_VERSION:-17.5}"
     profiles:
       - scdast
+      - sonatype
+      - sonatype-integration
     restart: unless-stopped
     shm_size: 256mb
     labels:
