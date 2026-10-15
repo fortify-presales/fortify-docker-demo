@@ -441,7 +441,133 @@ Reference: [IQ database configuration](https://help.sonatype.com/en/external-dat
 [IQ configuration](https://help.sonatype.com/en/config-yaml.html), and
 [Sonatype for Fortify SSC](https://help.sonatype.com/en/sonatype-fortify-ssc.html).
 
-### 8. Stop / clean up
+### 8. Start Jenkins and its build agent
+
+The optional `jenkins` profile provides a Jenkins controller and one Linux build agent. The agent includes full
+JDKs 17 and 21, Maven, Gradle wrapper support, Node.js 22 with npm, and the .NET 10 SDK. Builds run as the non-root
+`jenkins` user. Neither service publishes host ports; the controller uses Traefik HTTPS and the agent connects over
+WebSocket. There is no Docker socket access, Windows-only .NET Framework support, or preconfigured scan pipeline.
+These services do not require Fortify images, licenses, or databases.
+
+#### Start the controller
+
+Set `JENKINS_HOSTNAME` in your environment file and point its DNS record at this host. The public default is
+`jenkins.onfortify.com`. `JENKINS_VERSION` defaults to the rolling `lts-jdk21` tag; use an explicit compatible Jenkins
+release tag for reproducible deployments. The agent base is digest-pinned in its Dockerfile; tool packages receive
+current patches within their selected versions when the image is rebuilt without cache.
+
+```bash
+./jenkins/start.sh
+
+# Local environment: rerun setup to include Jenkins in the TLS certificate
+# and copy the public mkcert root CA for the agent.
+./scripts/setup-local.sh
+./jenkins/start.sh --local
+```
+
+Use either the public or local commands, not both against the same running stack. The scripts accept `DEMO_ENV_FILE`
+to select a different environment file and work from any directory. Local mode uses `demo.local.env` and the local
+Compose override. Existing local environment files need not be replaced: new settings have backward-compatible
+defaults. Local Jenkins is available at `https://jenkins.ftfydemo.localhost/`.
+
+On first startup, the script starts only Traefik and the controller, then stops successfully with registration
+instructions because no agent secret exists yet. A direct controller-only startup is also supported:
+
+```bash
+docker compose --env-file demo.env --profile jenkins up -d traefik jenkins
+```
+
+On first boot, open `https://<JENKINS_HOSTNAME>/`. On the **Unlock Jenkins** screen, you must enter the initial admin
+password stored inside the controller at `/var/jenkins_home/secrets/initialAdminPassword`. Retrieve it privately in
+your terminal:
+
+```bash
+docker compose --env-file demo.env exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+For local direct Compose commands, replace `--env-file demo.env` with
+`--env-file demo.local.env -f docker-compose.yml -f docker-compose.local.yml`.
+Complete the secured setup wizard, create your administrator account, and set the Jenkins URL to the same HTTPS
+address. Do not disable authentication. In **Manage Jenkins > Nodes > Built-In Node > Configure**, set the number of
+executors to **0** so builds run on the dedicated agent rather than the controller.
+
+#### Register and start the agent
+
+In **Manage Jenkins > Nodes > New Node**, create a **Permanent Agent** with:
+
+- Name: `build-agent`, matching `JENKINS_AGENT_NAME` if you override it.
+- Remote root directory: `/home/jenkins/agent`.
+- Executors: `1`.
+- Labels: `linux java nodejs dotnet`.
+- Usage: only build jobs with label expressions matching this node.
+- Launch method: **Launch agent by connecting it to the controller**.
+
+Save the node and open its page to retrieve its connection secret. Store the secret without adding it to an
+environment file, a pipeline, or Git. The following commands prompt without echoing the value:
+
+```bash
+mkdir -p jenkins/secrets
+chmod 700 jenkins/secrets
+umask 077
+read -r -s -p 'Agent secret: ' AGENT_SECRET; printf '\n'
+printf '%s' "$AGENT_SECRET" > jenkins/secrets/agent-secret
+unset AGENT_SECRET
+chmod 600 jenkins/secrets/agent-secret
+```
+
+The file must be readable by container UID **1000**, including traversal of its parent directories. If your host user
+has a different UID, arrange suitable ownership and restrictive permissions before continuing. The scripts do not
+change ownership or print the secret automatically. Rerun `./jenkins/start.sh` (or `./jenkins/start.sh --local`) to build
+and start the agent. Confirm **build-agent** is online in Jenkins; a running container alone is not proof that it
+authenticated successfully. The connection uses verified HTTPS/WebSocket and requires no TCP port 50000 setting.
+
+The local override mounts only `certs/mkcert-rootCA.pem` and supplies it to the Remoting client. Never copy or mount
+the mkcert CA private key. This trusts local TLS for the agent connection; builds accessing other local HTTPS services
+may require additional Java, Node.js, Git, or .NET certificate configuration. Do not bypass certificate validation.
+
+#### Run builds
+
+Use `agent { label 'java' }`, `agent { label 'nodejs' }`, or `agent { label 'dotnet' }` in your Jenkinsfile. Freestyle
+jobs should use **Restrict where this project can be run** with the appropriate label. Install any job-specific Jenkins
+plugins through the plugin manager; no application jobs or integration credentials are provisioned automatically.
+
+Java builds default to JDK 21. `JAVA17_HOME` and `JAVA21_HOME` expose full compiler installations. For a JDK 17 Maven
+build, use the following shell step; changing build `JAVA_HOME` does not change the agent's Java 21 Remoting runtime:
+
+```bash
+JAVA_HOME="$JAVA17_HOME" PATH="$JAVA17_HOME/bin:$PATH" ./mvnw -B verify
+```
+
+Use `mvn -B verify` for projects without a Maven wrapper, or `./gradlew --no-daemon build` for Gradle projects. Gradle
+itself is selected by each project's wrapper, not a global installation. Typical Node.js and .NET steps are
+`npm ci && npm test` and `dotnet test`. The .NET SDK is 10; projects requiring older runtime versions or a specific
+`global.json` SDK need an appropriately extended agent image. Windows desktop workloads need a Windows agent.
+
+`JENKINS_AGENT_NODE_MAJOR` and `JENKINS_AGENT_DOTNET_CHANNEL` select the agent's build arguments (defaults `22` and
+`10.0`). JDK 17 and 21 are always installed. Rebuild the agent after changing these values. The pinned base can be
+overridden using `docker compose ... build --build-arg AGENT_BASE_IMAGE=<compatible-image> jenkins-agent`.
+
+The agent workspace persists in `ftfydata_jenkins_agent`; Maven, Gradle, npm, NuGet and .NET CLI caches persist in
+`ftfydata_jenkins_agent_cache`. Caches can grow over time and are shared only within this dedicated agent. Explicit
+project settings that override cache locations may bypass this persistence.
+
+#### Status, shutdown and recovery
+
+```bash
+docker compose --env-file demo.env --profile jenkins ps jenkins jenkins-agent
+docker compose --env-file demo.env logs --tail 100 jenkins-agent
+./jenkins/stop.sh
+# Local:
+./jenkins/stop.sh --local
+```
+
+The stop script stops the agent first, then the controller, preserving their volumes and leaving Traefik and other
+demo services running. Rerun the start script to recover. Agent name/secret mismatches or TLS errors leave it offline;
+check its logs and node configuration. Back up Jenkins home before upgrading. Never use `down -v` for routine
+shutdown. A prior standalone Jenkins deployment may use a differently project-prefixed volume: inspect and migrate
+that data deliberately before switching, rather than deleting a conflicting container or attaching an empty volume.
+
+### 9. Stop / clean up
 
 ```bash
 # Stop and remove containers

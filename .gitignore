@@ -14,3 +14,4 @@ scdast/generated/
 scdast/secrets/
 sonatype-license.lic
 nexus/secrets/
+jenkins/secrets/

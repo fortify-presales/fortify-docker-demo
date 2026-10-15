@@ -1,22 +1,59 @@
 services:
 
   jenkins:
-    image: jenkins/jenkins:${JENKINS_VERSION}
+    image: jenkins/jenkins:${JENKINS_VERSION:-lts-jdk21}
+    profiles: [jenkins]
     container_name: "jenkins"
-    ports:
-      - "${JENKINS_WEB_PORT_EXTERNAL}:8080"
-      - "${JENKINS_AGENT_PORT}:50000"
-    restart: always
+    restart: unless-stopped
+    stop_grace_period: 60s
     volumes:
       - ftfydata_jenkins:/var/jenkins_home
     environment:
-      - JAVA_OPTS="-Dhudson.footerURL=https://www.microfocus.com/en-us/cyberres/application-security"
+      JAVA_OPTS: -Dhudson.footerURL=https://www.microfocus.com/en-us/cyberres/application-security
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.jenkins.rule=Host(`${JENKINS_HOSTNAME:-jenkins.onfortify.com}`)
+      - traefik.http.routers.jenkins.entrypoints=websecure
+      - traefik.http.routers.jenkins.tls=true
+      - traefik.http.routers.jenkins.tls.certresolver=le
+      - traefik.http.services.jenkins.loadbalancer.server.port=8080
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${JENKINS_WEB_PORT_INTERNAL}"]
-      interval: 120s
+      test: [CMD, curl, --fail, --silent, http://localhost:8080/login]
+      interval: 30s
       timeout: 10s
-      retries: 10
+      retries: 20
       start_period: 90s
+    networks:
+      - ftfydemo_net
+
+  jenkins-agent:
+    image: fortify-jenkins-agent:local
+    build:
+      context: ./agent
+      args:
+        NODE_MAJOR: ${JENKINS_AGENT_NODE_MAJOR:-22}
+        DOTNET_CHANNEL: ${JENKINS_AGENT_DOTNET_CHANNEL:-10.0}
+    profiles: [jenkins]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      JENKINS_URL: https://${JENKINS_HOSTNAME:-jenkins.onfortify.com}/
+      JENKINS_AGENT_NAME: ${JENKINS_AGENT_NAME:-build-agent}
+    volumes:
+      - ftfydata_jenkins_agent:/home/jenkins/agent
+      - ftfydata_jenkins_agent_cache:/home/jenkins/cache
+      - type: bind
+        source: ./secrets/agent-secret
+        target: /run/secrets/agent-secret
+        read_only: true
+        bind:
+          create_host_path: false
+    labels:
+      - traefik.enable=false
+    depends_on:
+      jenkins:
+        condition: service_healthy
     networks:
       - ftfydemo_net
 
@@ -25,3 +62,5 @@ networks:
     external: true
 volumes:
   ftfydata_jenkins:
+  ftfydata_jenkins_agent:
+  ftfydata_jenkins_agent_cache:
