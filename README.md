@@ -68,6 +68,27 @@ public IP, update the `Host()` rules in [lim/docker-compose.yml](lim/docker-comp
 TLS-ALPN-01 challenge, which only needs port `443` open — no port 80 required. Certificates are issued
 automatically the first time each hostname is requested.
 
+Each router gets its own single-hostname certificate, which Traefik selects using the SNI value sent by the client.
+Some restrictive networks (hospital or hotel guest Wi-Fi, captive portals, filtering proxies) strip or rewrite SNI. When
+that happens Traefik cannot tell which certificate to serve and falls back to a self-signed certificate, so browsers
+report "connection is not private" or "this site may be impersonating...". To avoid this,
+[traefik/dynamic_tls.yml](traefik/dynamic_tls.yml) defines a `defaultGeneratedCert` — a single multi-SAN certificate
+covering every demo hostname that Traefik serves whenever SNI is missing or unrecognised.
+
+Update the `main` and `sans` entries in that file to match your own hostnames. Every name listed must already resolve to
+this host, because TLS-ALPN-01 validates each SAN individually and the whole certificate fails if any one of them
+cannot be validated. Verify the fallback with a request that sends no SNI:
+
+```bash
+echo | openssl s_client -connect <this-host-ip>:443 2>/dev/null |
+  openssl x509 -noout -subject -ext subjectAltName
+```
+
+Note that this only fixes certificate selection on the server. A network that blocks the domains outright, or that
+performs TLS interception with its own certificate authority, still shows warnings; the issuer in the warning identifies
+the intercepting proxy. That must be resolved by the network operator allowlisting the domains, and users should not
+click through such warnings.
+
 **Option B: Docker Desktop/local environment with mkcert**
 
 Use [mkcert](https://github.com/FiloSottile/mkcert) to generate locally-trusted certificates instead:
@@ -94,6 +115,23 @@ The local hostnames use the reserved `.localhost` suffix and resolve to the loop
 hosts-file changes. Containers resolve the same names to Traefik through aliases in `docker-compose.local.yml`.
 
 ### 3. Start the stack
+
+The quickest way to bring up the whole demo is the global start script. It runs the preflight checks (licenses,
+secrets, DAST initialisation, the external network), starts every profile, and waits until each service reports
+ready:
+
+```bash
+./start.sh                # production environment, all profiles
+./start.sh --local        # local environment (demo.local.env + docker-compose.local.yml)
+./start.sh --profile default --profile jenkins
+```
+
+Use `./stop.sh` to shut everything down again without losing data — see [Stop / clean up](#9-stop--clean-up).
+
+> The local and production environments share one Compose project, so the scripts refuse to start a stack in one
+> mode while it is already running in the other. Stop it first, then switch.
+
+To manage individual services instead, use Compose directly:
 
 ```bash
 # Start the base "default" profile (traefik, lim, ssc)
@@ -402,9 +440,12 @@ Configuration and mappings are mounted read-only. Integration work files and log
 docker compose --env-file demo.env logs --tail 100 nexus-iq-integration-service
 ```
 
-The integration uses `http://nexus-iq-server:8070` and `http://ssc:8080/` internally, respecting `SSC_URL_PREFIX` when
-configured. It polls every 15 minutes by default (`SONATYPE_POLL_INTERVAL_MINUTES`) and also accepts webhooks. A missing
-token deliberately blocks integration startup without preventing Repository/Lifecycle from being used.
+The integration uses `https://<NEXUS_IQ_HOSTNAME>` for IQ API calls because the same setting is embedded in the report
+links uploaded to SSC; using the internal Docker hostname would create links that external SSC users cannot open. It
+uses `http://ssc:8080/` internally for SSC, respecting `SSC_URL_PREFIX` when configured. Local mode mounts the mkcert
+root CA into the integration container so Java trusts the local Traefik certificate. The integration polls every 15
+minutes by default (`SONATYPE_POLL_INTERVAL_MINUTES`) and also accepts webhooks. A missing token deliberately blocks
+integration startup without preventing Repository/Lifecycle from being used.
 
 #### Configure the protected webhook
 
@@ -414,12 +455,25 @@ the comma-separated IQ egress and trusted tester CIDRs, then rerun the integrati
 source address seen by Traefik; Docker NAT can differ from the container address. Do not allow the entire Docker
 network or `0.0.0.0/0`. TLS alone does not authenticate webhook callers; the IP allowlist is required.
 
-In Lifecycle **System Preferences > Webhooks**, add the URL above and select **Application Evaluation**. For an
-internal-only callback, IQ can instead use `http://nexus-iq-integration-service:8182/iqWebhook`; this bypasses the public
-proxy allowlist and relies on the trusted Docker network. Local mkcert testing also needs its CA trusted by IQ if
-using the public HTTPS callback; the internal URL avoids that requirement.
+In Lifecycle **System Preferences > Webhooks**, create an enabled webhook with:
 
-Re-evaluate one mapped application, check receipt in the integration logs, and confirm its findings arrive in SSC.
+- **Event:** `Application Evaluation` only
+- **URL (recommended):** `http://nexus-iq-integration-service:8182/iqWebhook`
+- **Secret:** leave blank; this integration does not validate a webhook secret
+
+The internal URL is recommended because IQ and the integration service share the Docker network. It avoids public DNS,
+TLS, and proxy allowlist issues. The public alternative is `https://lifecycle2ssc.onfortify.com/iqWebhook`. Local
+mkcert testing also needs its CA trusted by IQ when using the public HTTPS callback; the internal URL avoids that
+requirement.
+
+Re-evaluate one mapped application and watch the integration logs:
+
+```bash
+docker compose --env-file demo.env logs -f nexus-iq-integration-service
+```
+
+Successful delivery includes `Received webhook request`, followed by synchronization by report ID, and the refreshed
+findings should arrive in SSC.
 Verify that an unlisted external source receives 403 and `/startScanLoad` is not exposed. Polling and webhook tests
 need a valid SSC token, IQ credentials, existing mappings, and the enabled parser; a healthy HTTP listener alone
 does not demonstrate successful synchronization.
@@ -569,12 +623,27 @@ that data deliberately before switching, rather than deleting a conflicting cont
 
 ### 9. Stop / clean up
 
-```bash
-# Stop and remove containers
-docker compose --env-file demo.env down
+Use `./stop.sh` for routine shutdowns, such as over a weekend. It stops every container gracefully but keeps all
+containers, named volumes, and data intact, so `./start.sh` brings the stack back in the same state.
 
-# Also remove named volumes, the network, and generated certs
-docker compose --env-file demo.env down -v
+```bash
+./stop.sh                 # graceful shutdown, data preserved
+./stop.sh --local         # same, for the local environment
+./stop.sh --force         # skip the confirmation prompt (required for cron and other non-interactive use)
+```
+
+Before stopping, let running Jenkins builds, SAST jobs, and DAST scans finish so they are not interrupted mid-write.
+A full stop takes a few minutes: Nexus Repository and Lifecycle declare a 120s `stop_grace_period`, and the
+`scdast-wise`, `scdast-wise-core`, and `scdast-twofa` containers do not respond to `SIGTERM`, so they run to the
+`--timeout` (default 180s) before Docker kills them. This is expected and does not corrupt data.
+
+Only use the commands below when you deliberately want to **destroy** the demo and start over. `down -v` deletes
+every named volume, which means SSC findings, Nexus repositories, Lifecycle policies, and Jenkins job history are
+permanently lost:
+
+```bash
+# Destructive: remove containers, named volumes, the network, and generated certs
+docker compose --env-file demo.env --profile '*' down -v
 docker network rm ftfydemo_net
 rm -rf certs
 ```

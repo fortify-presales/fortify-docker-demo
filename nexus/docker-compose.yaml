@@ -98,7 +98,7 @@ services:
     profiles: [sonatype-integration]
     restart: unless-stopped
     environment:
-      IQSERVER_URL: http://nexus-iq-server:8070
+      IQSERVER_URL: https://${NEXUS_IQ_HOSTNAME:-lifecycle.onfortify.com}
       IQSERVER_USERNAME: ${NEXUS_IQ_USERNAME:-admin}
       SSCSERVER_URL: http://ssc:8080${SSC_URL_PREFIX:-/}
       SCHEDULING_FIXED_RATE_MINUTES: ${SONATYPE_POLL_INTERVAL_MINUTES:-15}

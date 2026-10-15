@@ -1,6 +1,20 @@
 tls:
-  certificates:
-    - certFile: /certs/lim.ftfydemo.local.pem
-      keyFile: /certs/lim.ftfydemo.local-key.pem
-    - certFile: /certs/ssc.ftfydemo.local.pem
-      keyFile: /certs/ssc.ftfydemo.local-key.pem
+  stores:
+    default:
+      # Served when a client omits or rewrites SNI, which happens behind some
+      # captive-portal and filtering proxies on guest networks. Without this,
+      # Traefik falls back to a self-signed certificate and browsers warn that
+      # the site may be impersonating another. Every name below must resolve to
+      # this host so the TLS-ALPN-01 challenge can validate it.
+      defaultGeneratedCert:
+        resolver: le
+        domain:
+          main: ssc.onfortify.com
+          sans:
+            - lim.onfortify.com
+            - scancentral-sast-controller.onfortify.com
+            - scancentral-dast-api.onfortify.com
+            - repo.onfortify.com
+            - lifecycle.onfortify.com
+            - lifecycle2ssc.onfortify.com
+            - jenkins.onfortify.com

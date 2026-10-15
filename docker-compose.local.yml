@@ -12,7 +12,7 @@ services:
           - ${NEXUS_REPO_HOSTNAME:-repo.ftfydemo.localhost}
           - ${NEXUS_IQ_HOSTNAME:-lifecycle.ftfydemo.localhost}
           - ${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.ftfydemo.localhost}
-            - ${JENKINS_HOSTNAME:-jenkins.ftfydemo.localhost}
+          - ${JENKINS_HOSTNAME:-jenkins.ftfydemo.localhost}
 
   lim:
     labels:
@@ -45,6 +45,15 @@ services:
       - traefik.http.routers.nexus-iq.tls.certresolver=
 
   nexus-iq-integration-service:
+    environment:
+      IQSERVER_CA_FILE: /run/certs/mkcert-rootCA.pem
+    volumes:
+      - type: bind
+        source: ./certs/mkcert-rootCA.pem
+        target: /run/certs/mkcert-rootCA.pem
+        read_only: true
+        bind:
+          create_host_path: false
     labels:
       - traefik.http.routers.nexus-iq-integration.rule=Host(`${NEXUS_IQ_INTEGRATION_HOSTNAME:-lifecycle2ssc.ftfydemo.localhost}`) && Path(`/iqWebhook`) && Method(`POST`)
       - traefik.http.routers.nexus-iq-integration.tls.certresolver=
